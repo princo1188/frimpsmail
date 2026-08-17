@@ -276,8 +276,19 @@ function SignaturesTab({ mailbox }: { mailbox: Mailbox | null }) {
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 {s.is_default && <Badge className="mb-2 text-xs">Default</Badge>}
-                <div className="text-sm border border-border rounded-md p-3 bg-muted/30 prose prose-sm max-w-none dark:prose-invert"
-                  dangerouslySetInnerHTML={{ __html: s.body_html }} />
+                {/* Sandboxed iframe so external HTML/images render faithfully without Tailwind bleed */}
+                <iframe
+                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;}img{max-width:100%;height:auto;display:inline-block;}*{box-sizing:border-box;}</style></head><body>${s.body_html}</body></html>`}
+                  sandbox="allow-same-origin"
+                  className="w-full border border-border rounded-md bg-white"
+                  style={{ minHeight: '60px', height: 'auto' }}
+                  onLoad={e => {
+                    const f = e.currentTarget;
+                    const h = f.contentDocument?.body?.scrollHeight;
+                    if (h) f.style.height = h + 24 + 'px';
+                  }}
+                  title="Signature preview"
+                />
               </div>
               <div className="flex gap-1 shrink-0">
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(s)}><Pencil className="w-3.5 h-3.5" /></Button>
@@ -307,9 +318,18 @@ function SignaturesTab({ mailbox }: { mailbox: Mailbox | null }) {
               <div className="bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground border-b border-border">
                 Live Preview (as seen by recipients)
               </div>
-              <div
-                className="p-3 text-sm prose prose-sm max-w-none dark:prose-invert bg-white"
-                dangerouslySetInnerHTML={{ __html: signaturePreviewPipeline(bodyHtml) }}
+              {/* Sandboxed iframe: no Tailwind/dark-mode bleed, images render at true size */}
+              <iframe
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;}img{max-width:100%;height:auto;display:inline-block;}*{box-sizing:border-box;}</style></head><body>${signaturePreviewPipeline(bodyHtml)}</body></html>`}
+                sandbox="allow-same-origin"
+                className="w-full bg-white"
+                style={{ minHeight: '80px', height: 'auto' }}
+                onLoad={e => {
+                  const f = e.currentTarget;
+                  const h = f.contentDocument?.body?.scrollHeight;
+                  if (h) f.style.height = h + 24 + 'px';
+                }}
+                title="Live signature preview"
               />
             </div>
           </div>

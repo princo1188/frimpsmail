@@ -465,7 +465,13 @@ function MessageItem({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {message.read_receipt_confirmed_at && (
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" aria-label={`Read ${format(new Date(message.read_receipt_confirmed_at), 'dd MMM HH:mm')}`} />
+            <span
+              className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"
+              title={`Read receipt confirmed at ${format(new Date(message.read_receipt_confirmed_at), 'dd MMM yyyy, HH:mm')}`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Read</span>
+            </span>
           )}
           {message.sent_at && (
             <span className="text-xs text-muted-foreground hidden sm:block">
@@ -484,6 +490,12 @@ function MessageItem({
             )}
             {message.cc_addresses?.length > 0 && (
               <p><span className="text-foreground/60">CC: </span>{message.cc_addresses.join(', ')}</p>
+            )}
+            {message.read_receipt_confirmed_at && (
+              <p className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                Read {format(new Date(message.read_receipt_confirmed_at), 'dd MMM yyyy, HH:mm')}
+              </p>
             )}
           </div>
 

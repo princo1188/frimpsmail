@@ -65,6 +65,7 @@ export interface Thread {
   folder_id: string | null;
   snoozed_until: string | null;
   created_at: string;
+  latest_read_receipt_at?: string | null;
   // joined
   messages?: Message[];
   spam_flags?: SpamFlag[];

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, CheckCircle2, AlertCircle, Loader2, Clock, WifiOff, ArrowLeft } from 'lucide-react';
+import { RefreshCw, CheckCircle2, AlertCircle, Loader2, Clock, WifiOff, ArrowLeft, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { supabase } from '@/db/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 import type { Mailbox } from '@/types/types';
 
 type SyncMailbox = Mailbox & { unread_count?: number };
@@ -36,10 +37,17 @@ function StatusBadge({ status }: { status: SyncMailbox['sync_status'] }) {
   );
 }
 
-function SyncRow({ mb }: { mb: SyncMailbox }) {
+function SyncRow({ mb, onForceSync }: { mb: SyncMailbox; onForceSync: (id: string) => Promise<void> }) {
+  const [syncing, setSyncing] = useState(false);
   const lastSynced = mb.last_synced_at
     ? formatDistanceToNow(new Date(mb.last_synced_at), { addSuffix: true })
     : 'Never';
+
+  const handleForce = async () => {
+    setSyncing(true);
+    await onForceSync(mb.id);
+    setSyncing(false);
+  };
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3 border-b border-border last:border-0">
@@ -54,12 +62,22 @@ function SyncRow({ mb }: { mb: SyncMailbox }) {
       <div className="flex items-center gap-3 shrink-0 pl-5 sm:pl-0">
         <StatusBadge status={mb.sync_status} />
 
-        <div className="text-right min-w-[120px] hidden sm:block">
+        <div className="text-right min-w-[100px] hidden sm:block">
           <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
             <Clock className="w-3 h-3" />
             {lastSynced}
           </p>
         </div>
+
+        <Button
+          variant="ghost" size="icon"
+          className="h-7 w-7 shrink-0"
+          title="Force re-sync this mailbox"
+          onClick={handleForce}
+          disabled={syncing || mb.sync_status === 'syncing'}
+        >
+          <RotateCcw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
+        </Button>
       </div>
 
       {mb.sync_status === 'error' && mb.last_error && (
@@ -92,6 +110,22 @@ export default function AdminSyncStatusPage() {
     setLastRefresh(new Date());
     setLoading(false);
   }, [organization]);
+
+  const forceSync = useCallback(async (mailboxId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('trigger-mailbox-sync', {
+        body: { mailbox_id: mailboxId },
+      });
+      if (error) throw error;
+      toast.success('Re-sync triggered — mailbox marked as pending');
+      // Optimistically update local state so the row shows "Pending" immediately
+      setMailboxes(prev => prev.map(mb =>
+        mb.id === mailboxId ? { ...mb, sync_status: 'pending' as const, last_error: null } : mb
+      ));
+    } catch (e) {
+      toast.error('Failed to trigger re-sync: ' + (e as Error).message);
+    }
+  }, []);
 
   // Initial load + live realtime updates
   useEffect(() => {
@@ -192,7 +226,7 @@ export default function AdminSyncStatusPage() {
               </div>
             ) : (
               <div>
-                {filtered.map(mb => <SyncRow key={mb.id} mb={mb} />)}
+                {filtered.map(mb => <SyncRow key={mb.id} mb={mb} onForceSync={forceSync} />)}
               </div>
             )}
           </CardContent>

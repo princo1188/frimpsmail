@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Paperclip, Star, AlertTriangle, Circle, Clock, CheckSquare } from 'lucide-react';
+import { Paperclip, Star, AlertTriangle, Circle, Clock, CheckSquare, CheckCheck } from 'lucide-react';
 import { useMail } from '@/contexts/MailContext';
 import type { Thread } from '@/types/types';
 import { cn } from '@/lib/utils';
@@ -227,6 +227,12 @@ export default function ThreadList() {
                     )}
                     {hasAttachments && <Paperclip className="w-3 h-3 text-muted-foreground" />}
                     {hasPendingSpam && <AlertTriangle className="w-3 h-3 text-destructive/70" />}
+                    {/* Read receipt: double-tick shown on sent threads where recipient opened */}
+                    {activeFolder === 'sent' && thread.latest_read_receipt_at && (
+                      <span title={`Read ${format(new Date(thread.latest_read_receipt_at), 'dd MMM HH:mm')}`}>
+                        <CheckCheck className="w-3.5 h-3.5 text-green-500" />
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

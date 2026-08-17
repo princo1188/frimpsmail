@@ -464,7 +464,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
     ? expanded
       ? 'fixed inset-4 md:inset-8 w-auto h-auto z-50'
       : 'fixed bottom-4 right-4 w-[min(910px,calc(100vw-2rem))] z-50 max-h-[85vh] md:h-[490px]'
-    : 'w-full';
+    : 'w-full flex flex-col min-h-[380px]';
 
   return (
     <div className={cn('compose-panel flex flex-col', composeClasses)}>

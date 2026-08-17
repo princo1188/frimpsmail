@@ -17,6 +17,7 @@ import SettingsPage from '@/pages/SettingsPage';
 import Setup2FAPage from '@/pages/Setup2FAPage';
 import Verify2FAPage from '@/pages/Verify2FAPage';
 import AdminResourcesPage from '@/pages/AdminResourcesPage';
+import AdminSyncStatusPage from '@/pages/AdminSyncStatusPage';
 import ResourceSchedulePage from '@/pages/ResourceSchedulePage';
 
 function AppRoutes() {
@@ -40,6 +41,7 @@ function AppRoutes() {
       <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
       <Route path="/admin/webhooks" element={<AdminRoute><WebhooksPage /></AdminRoute>} />
       <Route path="/admin/resources" element={<AdminRoute><AdminResourcesPage /></AdminRoute>} />
+      <Route path="/admin/sync-status" element={<AdminRoute><AdminSyncStatusPage /></AdminRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

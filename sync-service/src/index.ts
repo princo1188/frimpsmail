@@ -134,7 +134,11 @@ async function syncMailbox(mailboxRow: {
   // ALL other folders (junk, trash, spam, custom/company folders, etc.) share a single
   // polling connection so that every folder is synced automatically.
   const HIGH_PRIORITY_PATTERNS = ['inbox', 'sent', 'drafts', 'archive'];
-  const OTHER_FOLDERS_POLL_MS = 90_000; // 90 seconds
+  // Sent/Drafts need fast feedback (5s) so users see outgoing + draft changes quickly.
+  // INBOX/Archive use the env-configured interval (default 30s).
+  const SENT_DRAFTS_PATTERNS = ['sent', 'drafts'];
+  const SENT_DRAFTS_POLL_MS = 5_000;
+  const OTHER_FOLDERS_POLL_MS = 90_000; // Junk/Trash/spam — slow poll is fine
 
   // Track all per-folder clients so we can disconnect on error
   const folderClients: ImapClient[] = [];
@@ -188,16 +192,20 @@ async function syncMailbox(mailboxRow: {
 
     const config: MailboxConfig = { id: mailboxId, emailAddress: email_address, imapHost: imap_host, imapPort: imap_port, password };
 
-    // Spawn a dedicated IMAP connection per high-priority folder
+    // Spawn a dedicated IMAP connection per high-priority folder.
+    // Sent/Drafts use a 5s poll so outgoing mail and draft changes appear quickly;
+    // INBOX/Archive use the env-configured POLL_INTERVAL_MS (default 30s).
     const highPriorityPromises = Array.from(highPrioritySet).map(async (folderName) => {
       const fc = new ImapClient(config, supabase);
       folderClients.push(fc);
+      const normalizedFolderName = folderName.toLowerCase().replace(/^inbox\./, '').replace(/^inbox\//, '');
+      const pollMs = SENT_DRAFTS_PATTERNS.includes(normalizedFolderName) ? SENT_DRAFTS_POLL_MS : POLL_INTERVAL_MS;
       try {
         await fc.connect();
-        console.log(`[SYNC] Dedicated watcher started for ${email_address}/${folderName}`);
+        console.log(`[SYNC] Dedicated watcher started for ${email_address}/${folderName} (poll=${pollMs}ms)`);
         await fc.watchFolders([folderName], async (msg) => {
           await processMessage(supabase, mailboxId, folderIdMap, msg);
-        }, POLL_INTERVAL_MS);
+        }, pollMs);
       } catch (err) {
         console.error(`[SYNC] Watcher error for ${email_address}/${folderName}:`, err);
         throw err; // propagate so the outer Promise.race can detect failure

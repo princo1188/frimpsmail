@@ -4,7 +4,7 @@ import {
   Inbox, Send, FileText, Trash2, AlertTriangle, Archive,
   Search, Settings, ChevronDown, LogOut, User, Shield,
   Mail, RefreshCw, Video, BookmarkPlus, Bookmark, Clock,
-  LayoutDashboard, Keyboard, Sun, Moon, Monitor
+  LayoutDashboard, Keyboard, Sun, Moon, Monitor, Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -194,6 +194,9 @@ export function TopBar({ onCompose }: TopBarProps) {
                   <DropdownMenuItem onClick={() => navigate('/admin/resources')}>
                     <Archive className="w-4 h-4 mr-2" /> Resources
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/admin/sync-status')}>
+                    <Activity className="w-4 h-4 mr-2" /> Sync Status
+                  </DropdownMenuItem>
                 </>
               )}
               <DropdownMenuSeparator />
@@ -338,6 +341,13 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
             <Link to="/admin/resources">
               <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
                 <Archive className="w-4 h-4 shrink-0" /> Resources
+              </button>
+            </Link>
+          )}
+          {staffUser?.role === 'admin' && (
+            <Link to="/admin/sync-status">
+              <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
+                <Activity className="w-4 h-4 shrink-0" /> Sync Status
               </button>
             </Link>
           )}

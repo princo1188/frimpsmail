@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" fill="none">
+  <defs>
+    <linearGradient id="dropletGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E31E24"/>
+      <stop offset="100%" stop-color="#F7941D"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Droplet / Fuel Icon -->
+  <g transform="translate(16, 14)">
+    <path d="M45 8C45 8 18 42 18 62C18 77 25 92 45 92C65 92 72 77 72 62C72 42 45 8 45 8Z"
+          fill="url(#dropletGradient)"/>
+    <path d="M38 52C38 52 30 62 30 70C30 77 35 83 45 83C55 83 60 77 60 70C60 62 52 52 52 52"
+          fill="white" opacity="0.25"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="104" y="54" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="700" fill="#E31E24" letter-spacing="-0.5">Frimps</text>
+  <text x="238" y="54" font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="700" fill="#1a1a1a" letter-spacing="-0.5">Oil</text>
+
+  <!-- Tagline -->
+  <text x="106" y="80" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="500" fill="#666666" letter-spacing="2.5">POWERING GHANA FORWARD</text>
+</svg>

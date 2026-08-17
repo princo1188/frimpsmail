@@ -1,0 +1,2 @@
+ALTER TABLE messages ALTER COLUMN imap_uid DROP NOT NULL;
+ALTER TABLE messages ALTER COLUMN imap_uidvalidity DROP NOT NULL;

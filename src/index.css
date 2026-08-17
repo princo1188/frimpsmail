@@ -1,0 +1,228 @@
+/* stylelint-disable */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   COSMOS MAIL — Design System
+   Editorial × Professional · Light default · Cosmos dark mode
+   All org-override colors applied via --cosmos-* CSS variables
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* --- Base tokens (Frimps Oil light theme default) --- */
+    --radius: 0.5rem;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 7%;
+    /* Primary = Frimps Red #E31E24 */
+    --primary: 358 76% 51%;
+    --primary-foreground: 0 0% 100%;
+    /* Secondary = neutral */
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 0 0% 20%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 40%;
+    /* Accent = Frimps Orange #F7941D */
+    --accent: 33 93% 54%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 358 76% 51%;
+    --chart-1: 358 76% 51%;
+    --chart-2: 33 93% 54%;
+    --chart-3: 200 60% 40%;
+    --chart-4: 140 50% 40%;
+    --chart-5: 260 55% 50%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 358 76% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 33 93% 54%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 358 76% 51%;
+    /* --- Cosmos brand CSS vars (override per org at runtime) --- */
+    --cosmos-primary: #E31E24;
+    --cosmos-accent: #F7941D;
+    --cosmos-bg: #FAFAFA;
+    --cosmos-surface: #FFFFFF;
+    --cosmos-text: #121212;
+    /* --- Typography --- */
+    --leading-body: 1.7;
+    --tracking-tight: -0.015em;
+    /* --- Elevation --- */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+    --shadow-md: 0 4px 20px rgba(0,0,0,.08);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,.12);
+  }
+
+  .dark {
+    --background: 224 22% 8%;
+    --foreground: 210 20% 94%;
+    --card: 224 22% 11%;
+    --card-foreground: 210 20% 94%;
+    --popover: 224 22% 11%;
+    --popover-foreground: 210 20% 94%;
+    --primary: 358 76% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 224 20% 18%;
+    --secondary-foreground: 210 20% 80%;
+    --muted: 224 20% 16%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 33 80% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 18% 22%;
+    --input: 224 18% 22%;
+    --ring: 358 76% 55%;
+    --sidebar-background: 224 22% 7%;
+    --sidebar-foreground: 210 15% 75%;
+    --sidebar-primary: 358 76% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 33 80% 50%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 224 18% 20%;
+    --cosmos-bg: #0f1117;
+    --cosmos-surface: #161921;
+    --cosmos-text: #e8eaf0;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Playfair Display', Georgia, serif;
+    letter-spacing: var(--tracking-tight);
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  p, li, .prose {
+    text-wrap: pretty;
+  }
+}
+
+/* Cosmos Mail specific utilities */
+@layer utilities {
+  .cosmos-sidebar {
+    @apply bg-sidebar border-r border-sidebar-border;
+  }
+
+  .thread-row-unread {
+    @apply font-semibold bg-card;
+  }
+
+  .thread-row-read {
+    @apply font-normal text-muted-foreground;
+  }
+
+  .email-body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+
+  .compose-panel {
+    @apply bg-card border border-border rounded-lg shadow-lg;
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Unread indicator dot */
+  .unread-dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+    background-color: hsl(var(--primary));
+  }
+
+  /* Tiptap editor styles */
+  .tiptap-editor .ProseMirror {
+    @apply outline-none min-h-[120px] p-3;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+
+  .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply text-muted-foreground;
+    float: left;
+    pointer-events: none;
+    height: 0;
+  }
+
+  .tiptap-editor .ProseMirror img {
+    @apply max-w-full h-auto rounded-md my-2;
+    display: inline-block;
+  }
+
+  .tiptap-editor .ProseMirror ul {
+    @apply list-disc pl-5 my-2;
+  }
+
+  .tiptap-editor .ProseMirror ol {
+    @apply list-decimal pl-5 my-2;
+  }
+
+  .tiptap-editor .ProseMirror blockquote {
+    @apply border-l-4 border-muted-foreground/30 pl-4 my-2 italic;
+  }
+
+  /* AI summary card */
+  .ai-summary-card {
+    @apply border-l-4 bg-accent/5 rounded-r-md p-4;
+    border-left-color: hsl(var(--accent));
+  }
+
+  /* Spam banner */
+  .spam-banner {
+    @apply border border-destructive/30 bg-destructive/5 rounded-md p-3;
+  }
+
+  /* Skeleton pulse */
+  .skeleton {
+    @apply bg-muted animate-pulse rounded;
+  }
+
+  /* 3-pane grid */
+  .mail-layout {
+    display: grid;
+    grid-template-columns: 220px 320px 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  @media (max-width: 1024px) {
+    .mail-layout {
+      grid-template-columns: 200px 280px 1fr;
+    }
+  }
+}

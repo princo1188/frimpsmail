@@ -1,0 +1,26 @@
+[Unit]
+Description=Frimps Mail Persistent IMAP/SMTP Sync Service
+After=network.target
+
+[Service]
+Type=simple
+User=frimps
+Group=frimps
+WorkingDirectory=/opt/frimps-mail-sync
+ExecStart=/usr/bin/node /opt/frimps-mail-sync/dist/index.js
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+Environment="NODE_ENV=production"
+EnvironmentFile=/opt/frimps-mail-sync/.env
+
+# Graceful shutdown
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+# Health: ensure heartbeat is fresh
+WatchdogSec=30
+
+[Install]
+WantedBy=multi-user.target

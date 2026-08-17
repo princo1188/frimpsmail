@@ -207,7 +207,9 @@ async function syncMailbox(mailboxRow: {
     });
 
     // Spawn one shared polling connection for ALL non-high-priority folders
-    let otherFoldersPromise: Promise<void> = Promise.resolve();
+    // Use a never-resolving sentinel when there are no other folders so
+    // Promise.race doesn't resolve prematurely and kill the high-priority watchers.
+    let otherFoldersPromise: Promise<void> = new Promise(() => { /* intentionally never resolves */ });
     if (otherFolders.length) {
       const ofc = new ImapClient(config, supabase);
       folderClients.push(ofc);

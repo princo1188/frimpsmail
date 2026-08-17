@@ -176,6 +176,9 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
   const [signatures, setSignatures] = useState<Signature[]>([]);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
+  const [groupPickerTarget, setGroupPickerTarget] = useState<'to' | 'cc' | 'bcc'>('to');
   const [minimized, setMinimized] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
@@ -185,6 +188,12 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
   const fileRef = useRef<HTMLInputElement>(null);
   const inlineImageRef = useRef<HTMLInputElement>(null);
   const sendAbortRef = useRef<(() => void) | null>(null);
+
+  // Load groups for the insert-group picker
+  useEffect(() => {
+    if (!organization) return;
+    fetchContactGroups(organization.id, activeMailbox?.id).then(setGroups).catch(() => {});
+  }, [organization, activeMailbox?.id]);
 
   const defaultSig = signatures.find(s => s.is_default);
 
@@ -551,6 +560,67 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
           </div>
         )}
 
+        {/* Group picker panel */}
+        {showGroupPicker && (
+          <div className="border-t border-border bg-muted/30">
+            <div className="flex items-center justify-between px-3 pt-2 pb-1">
+              <p className="text-xs font-medium text-muted-foreground">Insert Group into:</p>
+              <div className="flex gap-1">
+                {(['to', 'cc', 'bcc'] as const).map(field => (
+                  <button
+                    key={field}
+                    onClick={() => setGroupPickerTarget(field)}
+                    className={cn(
+                      'text-xs px-2 py-0.5 rounded border transition-colors uppercase',
+                      groupPickerTarget === field
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:bg-muted'
+                    )}
+                  >
+                    {field}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {groups.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-3 pb-3">No groups yet. Create groups in Contacts → Groups.</p>
+            ) : (
+              <div className="max-h-44 overflow-y-auto pb-1">
+                {groups.map(g => {
+                  const count = (g as ContactGroup & { contact_group_members?: { count: number }[] })
+                    .contact_group_members?.[0]?.count ?? '?';
+                  return (
+                    <button
+                      key={g.id}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                      onClick={async () => {
+                        try {
+                          const emails = await expandGroupToEmails(g.id);
+                          if (emails.length === 0) { toast.info(`"${g.name}" has no members`); return; }
+                          const setter = groupPickerTarget === 'to' ? setTo : groupPickerTarget === 'cc' ? setCc : setBcc;
+                          setter(prev => {
+                            const newAddrs = emails.filter(e => !prev.includes(e));
+                            return [...prev, ...newAddrs];
+                          });
+                          if (groupPickerTarget !== 'to') setShowCcBcc(true);
+                          setShowGroupPicker(false);
+                          toast.success(`Added "${g.name}" to ${groupPickerTarget.toUpperCase()}`);
+                        } catch {
+                          toast.error('Could not expand group');
+                        }
+                      }}
+                    >
+                      <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="font-medium flex-1 truncate">{g.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{count} member{count !== 1 ? 's' : ''}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Schedule popover */}
         {showSchedule && (
           <div className="px-3 py-2 border-t border-border bg-muted/30">
@@ -591,12 +661,21 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
           </Button>
           <input ref={fileRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
 
-          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showSchedule && 'text-primary')} title="Schedule send" onClick={() => setShowSchedule(!showSchedule)}>
+          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showSchedule && 'text-primary')} title="Schedule send" onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); setShowGroupPicker(false); }}>
             <Clock className="w-4 h-4" />
           </Button>
 
-          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showTemplates && 'text-primary')} title="Email templates" onClick={() => setShowTemplates(!showTemplates)}>
+          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showTemplates && 'text-primary')} title="Email templates" onClick={() => { setShowTemplates(!showTemplates); setShowSchedule(false); setShowGroupPicker(false); }}>
             <LayoutTemplate className="w-4 h-4" />
+          </Button>
+
+          <Button
+            variant="ghost" size="icon"
+            className={cn('h-8 w-8', showGroupPicker && 'text-primary')}
+            title="Insert group"
+            onClick={() => { setShowGroupPicker(p => !p); setShowTemplates(false); setShowSchedule(false); }}
+          >
+            <Users className="w-4 h-4" />
           </Button>
 
           <div className="flex-1" />

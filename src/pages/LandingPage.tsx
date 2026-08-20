@@ -15,6 +15,9 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import InboxMock from '@/components/landing/InboxMock';
+import { supabaseUrl } from '@/db/supabase';
+
+const defaultLogoUrl = `${supabaseUrl}/storage/v1/object/public/logos/frimps-logo.png`;
 
 // ─── Feature data ────────────────────────────────────────────────────────────
 const features = [
@@ -313,7 +316,7 @@ export default function LandingPage() {
           {/* Logo */}
           <div className="flex items-center gap-2.5 shrink-0">
             <img
-              src="https://hgzyypyqawcppivnghpr.supabase.co/storage/v1/object/public/logos/frimps-logo.png"
+              src={defaultLogoUrl}
               alt="Frimps Oil"
               className="h-8 w-auto object-contain"
               onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -654,7 +657,7 @@ export default function LandingPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
               <img
-                src="https://hgzyypyqawcppivnghpr.supabase.co/storage/v1/object/public/logos/frimps-logo.png"
+                src={defaultLogoUrl}
                 alt="Frimps Oil"
                 className="h-7 w-auto object-contain"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}

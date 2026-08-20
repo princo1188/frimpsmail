@@ -4,7 +4,7 @@
  * React wrapper component based on QRCode.js that can convert any text to QR code image
  * 
  * Usage example:
- * import QRCodeDataUrl from './components/qrcodedataurl'
+ * import QRCodeDataUrl from '@/components/ui/qrcodedataurl'
  * 
  * function App() {
  *   return <QRCodeDataUrl text="https://example.com" /> // Replace with valid URL

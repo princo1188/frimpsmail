@@ -131,6 +131,31 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    const authorization = req.headers.get('Authorization');
+    if (!authorization?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authorization.slice('Bearer '.length),
+    );
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const { data: staffUser, error: staffError } = await supabase
+      .from('staff_users')
+      .select('organization_id, role')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (staffError || staffUser?.role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'Administrator access required' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { mailbox_id } = await req.json() as { mailbox_id: string };
     if (!mailbox_id) {
       return new Response(JSON.stringify({ error: 'mailbox_id required' }), {
@@ -142,6 +167,7 @@ serve(async (req) => {
       .from('mailboxes')
       .select('*')
       .eq('id', mailbox_id)
+      .eq('organization_id', staffUser.organization_id)
       .single();
     if (mbError || !mailbox) throw new Error('Mailbox not found');
 
@@ -173,7 +199,6 @@ serve(async (req) => {
       smtp_host: `${mailbox.smtp_host}:${mailbox.smtp_port}`,
       sync_status: mailbox.sync_status,
       vault_password_set: !!password,
-      vault_password_length: (password as string).length,
       imap: imapResult,
       smtp: smtpResult,
     }), {

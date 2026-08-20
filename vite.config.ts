@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
-import path from "path";
+import { fileURLToPath, URL } from "node:url";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
@@ -37,7 +37,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/hgzyypyqawcppivnghpr\.supabase\.co\/rest\//,
+            urlPattern: /^https:\/\/[^/]+\.supabase\.co\/rest\//,
             handler: "NetworkFirst",
             options: {
               cacheName: "supabase-api",
@@ -46,7 +46,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/hgzyypyqawcppivnghpr\.supabase\.co\/storage\//,
+            urlPattern: /^https:\/\/[^/]+\.supabase\.co\/storage\//,
             handler: "CacheFirst",
             options: {
               cacheName: "supabase-storage",
@@ -68,7 +68,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
 });

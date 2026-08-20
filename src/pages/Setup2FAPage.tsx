@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/db/supabase';
+import { supabase, supabaseUrl } from '@/db/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ export default function Setup2FAPage() {
   const branding = organization?.branding_config ?? {};
   const primaryColor = (branding as Record<string, string>).primary_color ?? '#E31E24';
   const logoUrl = (branding as Record<string, string>).logo_url
-    ?? 'https://hgzyypyqawcppivnghpr.supabase.co/storage/v1/object/public/logos/frimps-logo.png';
+    ?? `${supabaseUrl}/storage/v1/object/public/logos/frimps-logo.png`;
 
   // On mount: list existing factors first. If a verified factor exists, just mark
   // the DB as enrolled and redirect. Otherwise, delete any leftover (stale)

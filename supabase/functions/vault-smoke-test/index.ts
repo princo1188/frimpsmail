@@ -14,6 +14,31 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
+  const authorization = req.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  const { data: { user }, error: authError } = await supabase.auth.getUser(
+    authorization.slice('Bearer '.length),
+  );
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  const { data: staffUser, error: staffError } = await supabase
+    .from('staff_users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (staffError || staffUser?.role !== 'admin') {
+    return new Response(JSON.stringify({ error: 'Administrator access required' }), {
+      status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const testName = `smoke_test_${Date.now()}`;
   let secretId: string | null = null;
 

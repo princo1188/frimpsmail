@@ -82,19 +82,11 @@ export default function AdminMailboxesPage() {
     setDiagId(mailboxId);
     setDiagResult(null);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/diagnose-mailbox`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session?.access_token ?? ''}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
-        },
-        body: JSON.stringify({ mailbox_id: mailboxId }),
+      const { data, error } = await supabase.functions.invoke('diagnose-mailbox', {
+        body: { mailbox_id: mailboxId },
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Diagnosis failed');
-      setDiagResult(json);
+      if (error) throw error;
+      setDiagResult((data ?? {}) as Record<string, unknown>);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -131,19 +123,12 @@ export default function AdminMailboxesPage() {
   const triggerSync = async (mailboxId: string) => {
     setTriggerLoading(mailboxId);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trigger-mailbox-sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session?.access_token ?? ''}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
-        },
-        body: JSON.stringify({ mailbox_id: mailboxId }),
+      const { data, error } = await supabase.functions.invoke('trigger-mailbox-sync', {
+        body: { mailbox_id: mailboxId },
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Failed to trigger sync');
-      toast.success(json.message ?? 'Sync triggered');
+      if (error) throw error;
+      const result = (data ?? {}) as { message?: string };
+      toast.success(result.message ?? 'Sync triggered');
       await loadData();
     } catch (err) {
       toast.error((err as Error).message);

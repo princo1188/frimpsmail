@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Archive, Trash2, Mail, MailOpen, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/db/supabase';
 
 function formatThreadDate(dateStr: string | null): string {
   if (!dateStr) return '';
@@ -102,12 +103,17 @@ export default function ThreadList() {
   };
 
   const bulkMarkUnread = async () => {
-    // mark unread via direct update
-    const { supabase } = await import('@/db/supabase');
-    for (const id of selected) await supabase.from('threads').update({ is_read: false }).eq('id', id);
-    toast.success(`${selected.size} marked as unread`);
-    setSelected(new Set());
-    refreshThreads();
+    try {
+      for (const id of selected) {
+        const { error } = await supabase.from('threads').update({ is_read: false }).eq('id', id);
+        if (error) throw error;
+      }
+      toast.success(`${selected.size} marked as unread`);
+      setSelected(new Set());
+      refreshThreads();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not mark threads as unread');
+    }
   };
 
   if (loadingThreads) {

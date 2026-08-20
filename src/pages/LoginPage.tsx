@@ -11,7 +11,7 @@ import type { BrandingConfig } from '@/types/types';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { signIn, user, mfaStatus } = useAuth();
+  const { signIn, user, mfaStatus, mfaVerified } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -24,10 +24,12 @@ export default function LoginPage() {
     logo_url: '',
   });
 
-  // Redirect if already logged in and MFA is enrolled
+  // Route only after the authoritative MFA state is known.
   useEffect(() => {
-    if (user && mfaStatus !== 'not_enrolled') navigate('/inbox', { replace: true });
-  }, [user, mfaStatus, navigate]);
+    if (!user) return;
+    if (mfaStatus === 'not_enrolled') navigate('/setup-2fa', { replace: true });
+    if (mfaStatus === 'enrolled') navigate(mfaVerified ? '/inbox' : '/verify-2fa', { replace: true });
+  }, [user, mfaStatus, mfaVerified, navigate]);
 
   // Load branding from domain
   useEffect(() => {
@@ -57,7 +59,7 @@ export default function LoginPage() {
     if (error) {
       toast.error(error.includes('Invalid') ? 'Invalid email or password' : error);
     } else {
-      navigate('/inbox', { replace: true });
+      toast.success('Signed in. Checking two-factor authentication…');
     }
   };
 

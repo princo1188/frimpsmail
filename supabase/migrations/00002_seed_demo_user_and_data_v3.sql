@@ -3,6 +3,9 @@
 -- DEMO SEED v3  (sync_status uses valid enum: 'active')
 -- ============================================================
 
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
 -- 1. Auth user
 DO $$
 DECLARE v_user_id uuid := 'd0000000-0000-0000-0000-000000000001';
@@ -18,7 +21,7 @@ BEGIN
     ) VALUES (
       v_user_id, '00000000-0000-0000-0000-000000000000',
       'authenticated', 'authenticated', 'demo@frimpsoil.com.gh',
-      crypt('Demo1234!', gen_salt('bf')),
+      extensions.crypt('Demo1234!', extensions.gen_salt('bf')),
       now(), now(), now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       '{"full_name":"Kofi Mensah"}'::jsonb,

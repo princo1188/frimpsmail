@@ -157,7 +157,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 // ─── Integrated login panel ───────────────────────────────────────────────────
 function LoginPanel() {
-  const { signIn, user } = useAuth();
+  const { signIn, user, mfaStatus, mfaVerified } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -166,8 +166,10 @@ function LoginPanel() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (user) navigate('/inbox', { replace: true });
-  }, [user, navigate]);
+    if (!user) return;
+    if (mfaStatus === 'not_enrolled') navigate('/setup-2fa', { replace: true });
+    if (mfaStatus === 'enrolled') navigate(mfaVerified ? '/inbox' : '/verify-2fa', { replace: true });
+  }, [user, mfaStatus, mfaVerified, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,7 +182,6 @@ function LoginPanel() {
       setError(err.includes('Invalid') ? 'Invalid email or password' : err);
     } else {
       toast.success('Welcome back!');
-      navigate('/inbox', { replace: true });
     }
   };
 

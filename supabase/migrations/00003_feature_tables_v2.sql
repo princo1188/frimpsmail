@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
   organization_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   url text NOT NULL,
   events text[] DEFAULT ARRAY['message.received','thread.updated'],
-  secret_token text NOT NULL DEFAULT encode(gen_random_bytes(32), 'hex'),
+  secret_token text NOT NULL DEFAULT encode(extensions.gen_random_bytes(32), 'hex'),
   is_active boolean DEFAULT true,
   last_triggered_at timestamptz,
   created_by uuid REFERENCES auth.users(id),

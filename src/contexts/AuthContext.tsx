@@ -35,8 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkMfaLevel = useCallback(async () => {
     try {
-      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (!aalData) { setMfaVerified(false); setMfaStatus('loading'); return; }
+      const { data: aalData, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (error) throw error;
+      if (!aalData) throw new Error('Could not determine MFA status');
       // AAL2 means MFA challenge was passed this session
       const verified = aalData.currentLevel === 'aal2';
       setMfaVerified(verified);
@@ -66,50 +67,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const applySession = useCallback(async (nextSession: Session | null) => {
+    setSession(nextSession);
+    setUser(nextSession?.user ?? null);
+
+    if (nextSession?.user) {
+      setMfaStatus('loading');
+      await Promise.all([fetchStaffUser(nextSession.user.id), checkMfaLevel()]);
+      return;
+    }
+
+    setStaffUser(null);
+    setOrganization(null);
+    setMfaVerified(false);
+    setMfaStatus('loading');
+  }, [checkMfaLevel, fetchStaffUser]);
+
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 5000);
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      clearTimeout(timeout);
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await Promise.all([fetchStaffUser(session.user.id), checkMfaLevel()]);
+    void supabase.auth.getSession()
+      .then(async ({ data: { session }, error }) => {
+        if (error) throw error;
+        await applySession(session);
+      })
+      .catch((err) => {
+        // Supabase's gotrue-js may throw AbortError when another tab/request
+        // steals the navigator lock. This is a transient race condition, not a
+        // real auth failure; leaving state as logged-out is safe.
+        if (err?.name !== 'AbortError') {
+          console.error('Auth session initialization error:', err);
+        }
+      })
+      .finally(() => {
+        clearTimeout(timeout);
         setLoading(false);
-      } else {
-        setLoading(false);
-      }
-    }).catch((err) => {
-      clearTimeout(timeout);
-      setLoading(false);
-      // Supabase's gotrue-js may throw AbortError when another tab/request
-      // steals the navigator lock. This is a transient race condition, not a
-      // real auth failure; leaving state as logged-out is safe.
-      if (err?.name !== 'AbortError') {
-        console.error('Auth session initialization error:', err);
-      }
-    });
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchStaffUser(session.user.id);
-        checkMfaLevel();
-      } else {
-        setStaffUser(null);
-        setOrganization(null);
-        setMfaVerified(false);
-        setMfaStatus('loading');
-      }
+      void applySession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchStaffUser, checkMfaLevel]);
+  }, [applySession]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+    await applySession(data.session);
     return { error: null };
   };
 

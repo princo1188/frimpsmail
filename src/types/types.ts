@@ -93,6 +93,7 @@ export interface Message {
   sent_at: string | null;
   is_read: boolean;
   is_flagged: boolean;
+  is_draft?: boolean;
   spam_score: number | null;
   spam_status: 'clean' | 'flagged' | 'confirmed_spam';
   raw_headers: Record<string, string>;

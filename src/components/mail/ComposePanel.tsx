@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/db/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMail } from '@/contexts/MailContext';
-import { searchContacts, fetchSignatures, fetchEmailTemplates, fetchContactGroups, expandGroupToEmails } from '@/services/api';
+import { searchContacts, fetchSignatures, fetchEmailTemplates, fetchContactGroups, expandGroupToEmails, saveLocalDraft, discardLocalDraft } from '@/services/api';
 import type { Message, Contact, Signature, EmailTemplate, ContactGroup } from '@/types/types';
 import { cn } from '@/lib/utils';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -32,6 +32,7 @@ import RichTextToolbar from './RichTextToolbar';
 interface ComposePanelProps {
   mode?: 'compose' | 'reply' | 'replyAll' | 'forward';
   replyTo?: Message;
+  initialDraft?: Message;
   onClose: () => void;
   initialContent?: string;
 }
@@ -156,14 +157,15 @@ function RecipientInput({
   );
 }
 
-export default function ComposePanel({ mode = 'compose', replyTo, onClose, initialContent }: ComposePanelProps) {
+export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, onClose, initialContent }: ComposePanelProps) {
   const { activeMailbox } = useMail();
   const { staffUser, organization } = useAuth();
 
-  const [to, setTo] = useState<string[]>(replyTo ? [replyTo.from_address ?? ''] : []);
-  const [cc, setCc] = useState<string[]>([]);
-  const [bcc, setBcc] = useState<string[]>([]);
+  const [to, setTo] = useState<string[]>(initialDraft?.to_addresses ?? (replyTo ? [replyTo.from_address ?? ''] : []));
+  const [cc, setCc] = useState<string[]>(initialDraft?.cc_addresses ?? []);
+  const [bcc, setBcc] = useState<string[]>(initialDraft?.bcc_addresses ?? []);
   const [subject, setSubject] = useState(() => {
+    if (initialDraft) return initialDraft.subject ?? '';
     if (!replyTo) return '';
     if (mode === 'forward') return `Fwd: ${replyTo.subject ?? ''}`;
     const subj = replyTo.subject ?? '';
@@ -188,6 +190,11 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
   const fileRef = useRef<HTMLInputElement>(null);
   const inlineImageRef = useRef<HTMLInputElement>(null);
   const sendAbortRef = useRef<(() => void) | null>(null);
+  const draftRef = useRef<{ threadId: string; messageId: string } | null>(
+    initialDraft ? { threadId: initialDraft.thread_id, messageId: initialDraft.id } : null,
+  );
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftSaveInFlightRef = useRef(false);
 
   // Load groups for the insert-group picker
   useEffect(() => {
@@ -211,12 +218,50 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       FontSize,
     ],
-    content: mode === 'reply' || mode === 'replyAll'
+    content: initialDraft?.body_html ?? (mode === 'reply' || mode === 'replyAll'
       ? `<p></p><p>—</p><blockquote><p><em>From: ${replyTo?.from_name ?? replyTo?.from_address}</em></p>${replyTo?.body_html ?? ''}</blockquote>`
       : mode === 'forward'
         ? `<p></p><p>—— Forwarded message ——</p><blockquote>${replyTo?.body_html ?? ''}</blockquote>`
-        : `<p></p>${defaultSig ? `<hr/>${defaultSig.body_html}` : ''}`,
+        : `<p></p>${defaultSig ? `<hr/>${defaultSig.body_html}` : ''}`),
   });
+
+  const saveDraft = useCallback(async () => {
+    if (!activeMailbox || draftSaveInFlightRef.current || sending) return;
+    const bodyHtml = editor?.getHTML() ?? '';
+    const plainBody = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!plainBody && !subject.trim() && !to.length && !cc.length && !bcc.length) return;
+    draftSaveInFlightRef.current = true;
+    try {
+      const { data: draftsFolder, error: folderError } = await supabase.from('mailbox_folders').select('id')
+        .eq('mailbox_id', activeMailbox.id).eq('normalized_type', 'drafts').maybeSingle();
+      if (folderError || !draftsFolder?.id) return;
+      const saved = await saveLocalDraft({
+        threadId: draftRef.current?.threadId,
+        messageId: draftRef.current?.messageId,
+        mailboxId: activeMailbox.id,
+        folderId: draftsFolder.id,
+        to, cc, bcc, subject, bodyHtml,
+      });
+      draftRef.current = saved;
+    } catch (error) {
+      console.error('Failed to autosave draft', error);
+    } finally {
+      draftSaveInFlightRef.current = false;
+    }
+  }, [activeMailbox, bcc, cc, editor, sending, subject, to]);
+
+  const scheduleDraftSave = useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => { void saveDraft(); }, 750);
+  }, [saveDraft]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.on('update', scheduleDraftSave);
+    return () => { editor.off('update', scheduleDraftSave); };
+  }, [editor, scheduleDraftSave]);
+
+  useEffect(() => { scheduleDraftSave(); }, [to, cc, bcc, subject, scheduleDraftSave]);
 
   // If initialContent (AI draft) provided, populate editor after mount
   useEffect(() => {
@@ -231,7 +276,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
       fetchSignatures(activeMailbox.id).then(sigs => {
         setSignatures(sigs);
         // Append default sig to editor if compose mode
-        if (mode === 'compose' && sigs.find(s => s.is_default) && editor) {
+        if (mode === 'compose' && !initialDraft && sigs.find(s => s.is_default) && editor) {
           const sig = sigs.find(s => s.is_default);
           if (sig) editor.commands.setContent(`<p></p><hr/>${sig.body_html}`);
         }
@@ -247,7 +292,16 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
   }, [organization]);
 
   // Cleanup undo timer on unmount
-  useEffect(() => () => { if (undoTimer) clearTimeout(undoTimer); }, [undoTimer]);
+  useEffect(() => () => {
+    if (undoTimer) clearTimeout(undoTimer);
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+  }, [undoTimer]);
+
+  const handleClose = () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    void saveDraft();
+    onClose();
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -408,8 +462,10 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
           mailbox_id: activeMailbox!.id,
           to_addresses: to,
           cc_addresses: cc,
+          bcc_addresses: bcc,
           subject,
           body_html: body,
+          reply_to_message_id: replyTo?.id ?? null,
           attachments_json: attachments.map(a => ({ path: a.path, filename: a.file.name })),
           send_at: scheduleAt.toISOString(),
           status: 'pending',
@@ -432,6 +488,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
         }
         toast.success('Message sent');
       }
+      if (draftRef.current) await discardLocalDraft(draftRef.current.threadId);
       onClose();
     } catch (e: unknown) {
       toast.error('Failed to send: ' + (e as Error).message);
@@ -453,7 +510,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
           <span className="text-sm font-medium truncate">{subject || 'New Message'}</span>
           <div className="flex items-center gap-1">
             <ChevronDown className="w-4 h-4" />
-            <button onClick={(e) => { e.stopPropagation(); onClose(); }}><X className="w-4 h-4" /></button>
+            <button onClick={(e) => { e.stopPropagation(); handleClose(); }}><X className="w-4 h-4" /></button>
           </div>
         </div>
       </div>
@@ -482,7 +539,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, onClose, initi
               </button>
             </>
           )}
-          <button onClick={onClose} className="hover:text-background/70" title="Close">
+          <button onClick={handleClose} className="hover:text-background/70" title="Close">
             <X className="w-4 h-4" />
           </button>
         </div>

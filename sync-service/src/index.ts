@@ -303,6 +303,13 @@ async function recordSentMessage(opts: {
 }): Promise<void> {
   let threadId: string | null = null;
 
+  const { data: sentFolder } = await supabase
+    .from('mailbox_folders')
+    .select('id')
+    .eq('mailbox_id', opts.mailbox_id)
+    .eq('normalized_type', 'sent')
+    .maybeSingle();
+
   if (opts.reply_to_message_id) {
     const { data: existingThread } = await supabase
       .from('messages')
@@ -321,7 +328,7 @@ async function recordSentMessage(opts: {
         mailbox_id: opts.mailbox_id,
         subject: opts.subject,
         participants: Array.from(new Set(participants)),
-        folder_id: null,
+        folder_id: sentFolder?.id ?? null,
         last_message_at: new Date().toISOString(),
         is_read: true,
         is_starred: false,

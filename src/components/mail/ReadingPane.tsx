@@ -334,7 +334,8 @@ function FollowUpPopover({ threadId }: { threadId: string }) {
   };
 
   const dismiss = async () => {
-    await dismissFollowUp(threadId);
+    if (!staffUser) return;
+    await dismissFollowUp(threadId, staffUser.id);
     toast.success('Follow-up cleared');
     setOpen(false);
   };
@@ -576,6 +577,7 @@ export default function ReadingPane() {
   const [gallery, setGallery] = useState<{ items: GalleryItem[]; index: number } | null>(null);
   const [showAi, setShowAi] = useState(false);
   const [draftContent, setDraftContent] = useState<string | null>(null);
+  const [draftToEdit, setDraftToEdit] = useState<Message | null>(null);
 
   // Expand latest message by default
   useEffect(() => {
@@ -585,6 +587,7 @@ export default function ReadingPane() {
     setComposingReply(false);
     setShowAi(false);
     setDraftContent(null);
+    setDraftToEdit(null);
   }, [activeMessages]);
 
   const toggleMessage = (id: string) => {
@@ -644,6 +647,11 @@ export default function ReadingPane() {
         <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward (f)" onClick={() => activeMessages.length && handleReply(activeMessages[activeMessages.length - 1])}>
           <Forward className="w-4 h-4" />
         </Button>
+        {activeMessages.some(message => message.is_draft) && (
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setDraftToEdit(activeMessages.find(message => message.is_draft) ?? null)}>
+            Edit draft
+          </Button>
+        )}
         <Separator orientation="vertical" className="h-5 mx-1" />
         <Button variant="ghost" size="icon" className="h-8 w-8" title="Star" onClick={() => starThread(activeThread.id, !activeThread.is_starred)}>
           <Star className={cn('w-4 h-4', activeThread.is_starred ? 'fill-yellow-400 text-yellow-400' : '')} />
@@ -732,6 +740,12 @@ export default function ReadingPane() {
             onClose={() => { setComposingReply(false); setDraftContent(null); }}
             initialContent={draftContent ?? undefined}
           />
+        </div>
+      )}
+
+      {draftToEdit && (
+        <div className="border-t border-border shrink-0 max-h-80">
+          <ComposePanel initialDraft={draftToEdit} onClose={() => setDraftToEdit(null)} />
         </div>
       )}
 

@@ -12,6 +12,7 @@ import {
   isToday, parseISO,
 } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/db/supabase';
 
 const TYPE_LABELS: Record<string, string> = {
   room: 'Room',
@@ -49,6 +50,15 @@ export default function ResourceSchedulePage() {
   }, [organization, currentWeek]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!organization) return;
+    const channel = supabase.channel(`resource-schedule-${organization.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resource_bookings' }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: `organization_id=eq.${organization.id}` }, () => { void load(); })
+      .subscribe();
+    return () => { void channel.unsubscribe(); };
+  }, [organization, load]);
 
   const getBookingsFor = (resourceId: string, day: Date) =>
     bookings.filter(b => {

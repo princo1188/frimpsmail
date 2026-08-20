@@ -104,8 +104,16 @@ export function MailProvider({ children }: { children: ReactNode }) {
       const { data } = await q;
       if (data) {
         setThreads(data as Thread[]);
-        setUnreadCount((data as Thread[]).filter(t => !t.is_read).length);
       }
+
+      // The side rail is always an Inbox counter, not a count for whichever
+      // folder happens to be open.
+      const inboxFolder = getFolderFilter('inbox', folders);
+      let unreadQuery = supabase.from('threads').select('*', { count: 'exact', head: true })
+        .eq('mailbox_id', activeMailbox.id).eq('is_read', false);
+      unreadQuery = inboxFolder ? unreadQuery.eq('folder_id', inboxFolder.folder_id) : unreadQuery.is('folder_id', null);
+      const { count } = await unreadQuery;
+      setUnreadCount(count ?? 0);
     } finally {
       setLoadingThreads(false);
     }
@@ -117,16 +125,28 @@ export function MailProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!activeMailbox) return;
     const channel = supabase
-      .channel('mail-realtime')
+      .channel(`mail-realtime-${activeMailbox.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'threads', filter: `mailbox_id=eq.${activeMailbox.id}` },
         () => loadThreads()
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `mailbox_id=eq.${activeMailbox.id}` },
-        () => { if (activeThread) loadMessages(activeThread.id); }
+        () => { loadThreads(); if (activeThread) loadMessages(activeThread.id); }
       )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mailbox_folders', filter: `mailbox_id=eq.${activeMailbox.id}` }, () => {
+        supabase.from('mailbox_folders').select('*').eq('mailbox_id', activeMailbox.id)
+          .then(({ data }) => { if (data) setFolders(data as MailboxFolder[]); });
+      })
       .subscribe();
     return () => { channel.unsubscribe(); };
-  }, [activeMailbox, activeThread]); // eslint-disable-line
+  }, [activeMailbox, activeThread, loadThreads]); // eslint-disable-line
+
+  // Realtime is the fast path; polling is the recovery path for browser sleep,
+  // transient websocket loss, and IMAP sync updates arriving during reconnect.
+  useEffect(() => {
+    if (!activeMailbox) return;
+    const timer = window.setInterval(() => { void loadThreads(); }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [activeMailbox, loadThreads]);
 
   const loadMessages = async (threadId: string) => {
     setLoadingMessages(true);

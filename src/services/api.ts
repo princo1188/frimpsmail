@@ -71,6 +71,73 @@ export async function markMessageRead(messageId: string) {
   await supabase.from('messages').update({ is_read: true }).eq('id', messageId);
 }
 
+export interface LocalDraftInput {
+  threadId?: string;
+  messageId?: string;
+  mailboxId: string;
+  folderId: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyHtml: string;
+}
+
+/** Persist one local draft message.  The stable thread/message ids prevent every
+ * editor debounce from creating another Drafts entry. */
+export async function saveLocalDraft(input: LocalDraftInput): Promise<{ threadId: string; messageId: string }> {
+  const now = new Date().toISOString();
+  const participants = Array.from(new Set([...input.to, ...input.cc, ...input.bcc]));
+  let threadId = input.threadId;
+
+  if (threadId) {
+    const { error } = await supabase.from('threads').update({
+      subject: input.subject || '(no subject)', participants, folder_id: input.folderId,
+      last_message_at: now, is_read: true,
+    }).eq('id', threadId);
+    if (error) throw error;
+  } else {
+    const { data, error } = await supabase.from('threads').insert({
+      mailbox_id: input.mailboxId, subject: input.subject || '(no subject)', participants,
+      folder_id: input.folderId, last_message_at: now, is_read: true, is_starred: false, labels: [],
+    }).select('id').single();
+    if (error || !data) throw error ?? new Error('Could not create draft thread');
+    threadId = data.id;
+  }
+
+  const resolvedThreadId = threadId!;
+  const message = {
+    thread_id: resolvedThreadId,
+    mailbox_id: input.mailboxId,
+    subject: input.subject || '(no subject)',
+    to_addresses: input.to,
+    cc_addresses: input.cc,
+    bcc_addresses: input.bcc,
+    body_html: input.bodyHtml,
+    body_text: input.bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+    sent_at: now,
+    is_read: true,
+    is_flagged: false,
+    is_draft: true,
+    spam_status: 'clean',
+    raw_headers: { 'x-frimps-draft': 'true' },
+  };
+
+  if (input.messageId) {
+    const { error } = await supabase.from('messages').update(message).eq('id', input.messageId);
+    if (error) throw error;
+    return { threadId: resolvedThreadId, messageId: input.messageId };
+  }
+  const { data, error } = await supabase.from('messages').insert(message).select('id').single();
+  if (error || !data) throw error ?? new Error('Could not create draft message');
+  return { threadId: resolvedThreadId, messageId: data.id };
+}
+
+export async function discardLocalDraft(threadId: string) {
+  const { error } = await supabase.from('threads').delete().eq('id', threadId);
+  if (error) throw error;
+}
+
 export async function updateSpamFlag(flagId: string, action: 'confirmed' | 'dismissed') {
   const { error } = await supabase
     .from('spam_flags')
@@ -414,16 +481,23 @@ export async function deleteSavedSearch(id: string) {
 // FOLLOW-UP REMINDERS
 // ============================================================
 export async function setFollowUp(threadId: string, staffUserId: string, remindAt: Date, note?: string) {
-  await supabase.from('threads').update({ follow_up_at: remindAt.toISOString(), follow_up_note: note ?? null }).eq('id', threadId);
-  await supabase.from('follow_up_reminders').upsert(
+  const { error: threadError } = await supabase.from('threads')
+    .update({ follow_up_at: remindAt.toISOString(), follow_up_note: note ?? null }).eq('id', threadId);
+  if (threadError) throw threadError;
+  const { error } = await supabase.from('follow_up_reminders').upsert(
     { thread_id: threadId, staff_user_id: staffUserId, remind_at: remindAt.toISOString(), note: note ?? null, is_dismissed: false },
     { onConflict: 'thread_id,staff_user_id' }
   );
+  if (error) throw error;
 }
 
-export async function dismissFollowUp(threadId: string) {
-  await supabase.from('threads').update({ follow_up_at: null, follow_up_note: null }).eq('id', threadId);
-  await supabase.from('follow_up_reminders').update({ is_dismissed: true }).eq('thread_id', threadId);
+export async function dismissFollowUp(threadId: string, staffUserId: string) {
+  const { error: threadError } = await supabase.from('threads')
+    .update({ follow_up_at: null, follow_up_note: null }).eq('id', threadId);
+  if (threadError) throw threadError;
+  const { error } = await supabase.from('follow_up_reminders')
+    .update({ is_dismissed: true }).eq('thread_id', threadId).eq('staff_user_id', staffUserId);
+  if (error) throw error;
 }
 
 export async function fetchPendingFollowUps(staffUserId: string): Promise<FollowUpReminder[]> {
@@ -574,4 +648,3 @@ export async function updateOooSettings(mailboxId: string, settings: {
   const { error } = await supabase.from('mailboxes').update(settings).eq('id', mailboxId);
   if (error) throw error;
 }
-

@@ -64,3 +64,81 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
   END LOOP;
 END $$;
+
+-- Mailboxes for all reset-seeded staff users. Credentials are kept in Vault so
+-- the persistent sync service can connect without exposing webmail passwords.
+DO $$
+DECLARE
+  v_email text;
+  v_user_id uuid;
+  v_mailbox_id uuid;
+  v_vault_ref uuid;
+BEGIN
+  FOREACH v_email IN ARRAY ARRAY[
+    'administration@frimpsoil.com.gh', 'audit@frimpsoil.com.gh',
+    'daniel.yekple@frimpsoil.com.gh', 'david.ajera@frimpsoil.com.gh',
+    'depot@frimpsoil.com.gh', 'derrick.dwamenadebrah@frimpsoil.com.gh',
+    'edmund.dwamena@frimpsoil.com.gh', 'emmanuel.okyere@frimpsoil.com.gh',
+    'erika.frimpong@frimpsoil.com.gh', 'finance@frimpsoil.com.gh',
+    'gifty.kyeibaffour@frimpsoil.com.gh', 'godfred.obeng@frimpsoil.com.gh',
+    'hr@frimpsoil.com.gh', 'ivan.banang@frimpsoil.com.gh',
+    'james.tagoe@frimpsoil.com.gh', 'jamila.gado@frimpsoil.com.gh',
+    'johannes.tenzagh@frimpsoil.com.gh', 'kingsley.frimpong@frimpsoil.com.gh',
+    'marketing-distribution@frimpsoil.com.gh', 'mavis.frimpong@frimpsoil.com.gh',
+    'miracle.lartey@frimpsoil.com.gh', 'operations@frimpsoil.com.gh',
+    'peter.nyamaah@frimpsoil.com.gh', 'phinehas.pappoe@frimpsoil.com.gh',
+    'raphael.teye@frimpsoil.com.gh', 'samuel.agama@frimpsoil.com.gh',
+    'samuel.marlaidickson@frimpsoil.com.gh', 'sandra.omane@frimpsoil.com.gh',
+    'siaw.appiahfrimpong@frimpsoil.com.gh', 'siddique.abubakariissaka@frimpsoil.com.gh',
+    'stephen.commey@frimpsoil.com.gh', 'support@frimpsoil.com.gh',
+    'vincent.jojoboadu@frimpsoil.com.gh', 'vintbaffour@frimpsoil.com.gh',
+    'yaaopokuaddai@frimpsoil.com.gh'
+  ] LOOP
+    SELECT id INTO v_user_id FROM auth.users WHERE email = v_email LIMIT 1;
+    IF v_user_id IS NULL THEN
+      RAISE EXCEPTION 'Cannot seed mailbox: auth user % is missing', v_email;
+    END IF;
+
+    v_vault_ref := public.vault_upsert_secret(
+      'Frimps@2026',
+      format('mailbox_%s_password', lower(regexp_replace(v_email, '[^a-zA-Z0-9]', '_', 'g'))),
+      format('IMAP/SMTP password for %s', v_email)
+    );
+
+    INSERT INTO public.mailboxes (
+      organization_id, staff_user_id, email_address, display_name,
+      imap_host, imap_port, smtp_host, smtp_port,
+      credential_vault_ref, sync_status, last_error
+    ) VALUES (
+      'aaaaaaaa-0000-0000-0000-000000000001', v_user_id, v_email,
+      initcap(replace(replace(split_part(v_email, '@', 1), '.', ' '), '-', ' ')),
+      'mail.frimpsoil.com.gh', 993, 'mail.frimpsoil.com.gh', 587,
+      v_vault_ref, 'pending', NULL
+    )
+    ON CONFLICT (email_address) DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      staff_user_id = EXCLUDED.staff_user_id,
+      display_name = EXCLUDED.display_name,
+      imap_host = EXCLUDED.imap_host,
+      imap_port = EXCLUDED.imap_port,
+      smtp_host = EXCLUDED.smtp_host,
+      smtp_port = EXCLUDED.smtp_port,
+      credential_vault_ref = EXCLUDED.credential_vault_ref,
+      sync_status = 'pending',
+      last_error = NULL
+    RETURNING id INTO v_mailbox_id;
+
+    INSERT INTO public.mailbox_folders (mailbox_id, imap_folder_name, normalized_type, display_name)
+    SELECT v_mailbox_id, folder.imap_folder_name, folder.normalized_type, folder.display_name
+    FROM (VALUES
+      ('INBOX', 'inbox', 'Inbox'), ('Sent', 'sent', 'Sent'),
+      ('Drafts', 'drafts', 'Drafts'), ('Archive', 'archive', 'Archive'),
+      ('Spam', 'spam', 'Spam'), ('Trash', 'trash', 'Trash')
+    ) AS folder(imap_folder_name, normalized_type, display_name)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.mailbox_folders existing
+      WHERE existing.mailbox_id = v_mailbox_id
+        AND existing.normalized_type = folder.normalized_type
+    );
+  END LOOP;
+END $$;

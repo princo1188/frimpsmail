@@ -184,6 +184,18 @@ export default function CalendarPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Keep event cards, free/busy and resource overlays current when another
+  // collaborator changes a booking in a separate browser.
+  useEffect(() => {
+    if (!organization) return;
+    const channel = supabase.channel(`calendar-data-${organization.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events', filter: `organization_id=eq.${organization.id}` }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resource_bookings' }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: `organization_id=eq.${organization.id}` }, () => { void load(); })
+      .subscribe();
+    return () => { void channel.unsubscribe(); };
+  }, [organization, load]);
+
   // ── Supabase Realtime — reminder notifications ───────────────────────────
   useEffect(() => {
     if (!organization) return;

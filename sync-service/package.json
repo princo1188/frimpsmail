@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.27.0",
     "@supabase/supabase-js": "^2.49.0",
     "@types/html-to-text": "^9.0.4",
+    "@types/node": "^20.19.43",
     "dotenv": "^16.4.5",
     "html-to-text": "^10.0.0",
     "ics": "^3.12.0",
@@ -22,7 +23,6 @@
   },
   "devDependencies": {
     "@types/minimatch": "^6.0.0",
-    "@types/node": "^20.19.43",
     "@types/nodemailer": "^6.4.15",
     "tsx": "^4.23.0",
     "typescript": "^5.9.3"

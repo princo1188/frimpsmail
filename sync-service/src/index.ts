@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createServer, type Server } from 'node:http';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ImapClient, MailboxConfig } from './imap-client';
 import { getCredential } from './credential-vault';
@@ -16,6 +17,7 @@ import { scheduleReminders } from './reminder-scheduler';
 import { sendIcsInvite } from './ics-generator';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
+const HEALTH_PORT = Number.parseInt(process.env.PORT ?? '8080', 10) || 8080;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const BACKFILL_DAYS = parseInt(process.env.BACKFILL_DAYS ?? '90', 10);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS ?? '30000', 10);
@@ -29,6 +31,27 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+/** Lightweight liveness endpoint that stays responsive during mailbox sync. */
+function startHealthServer(): Server {
+  const server = createServer((request, response) => {
+    const path = request.url?.split('?', 1)[0];
+    if (request.method === 'GET' && (path === '/' || path === '/health')) {
+      response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Sync Worker Healthy');
+      return;
+    }
+
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Not Found');
+  });
+
+  server.on('error', error => console.error('[HEALTH] HTTP server error:', error));
+  server.listen(HEALTH_PORT, () => console.log(`[HEALTH] Listening on port ${HEALTH_PORT}`));
+  return server;
+}
+
+const healthServer = startHealthServer();
 
 async function processMessage(
   supabase: SupabaseClient,
@@ -765,6 +788,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', async () => {
     console.log('[SHUTDOWN] SIGTERM received, shutting down gracefully...');
     await channel.unsubscribe();
+    await new Promise<void>(resolve => healthServer.close(() => resolve()));
     process.exit(0);
   });
 }

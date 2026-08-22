@@ -26,6 +26,7 @@ const emails = [
   'operations@frimpsoil.com.gh',
   'peter.nyamaah@frimpsoil.com.gh',
   'phinehas.pappoe@frimpsoil.com.gh',
+  'prince@frimpsoil.com.gh',
   'raphael.teye@frimpsoil.com.gh',
   'samuel.agama@frimpsoil.com.gh',
   'samuel.marlaidickson@frimpsoil.com.gh',
@@ -55,6 +56,16 @@ const displayName = (email) => email
   .replace(/[.-]/g, ' ')
   .replace(/\b\w/g, (character) => character.toUpperCase());
 
+const isAdmin = (email) => email === 'prince@frimpsoil.com.gh';
+const selectedEmail = process.env.SEED_USER_EMAIL?.toLowerCase();
+const targetEmails = selectedEmail
+  ? emails.filter((email) => email === selectedEmail)
+  : emails;
+
+if (selectedEmail && targetEmails.length === 0) {
+  throw new Error(`Unknown seeded user: ${selectedEmail}`);
+}
+
 const { data: organization, error: organizationError } = await supabase
   .from('organizations')
   .select('id')
@@ -77,7 +88,7 @@ const usersByEmail = new Map(
 );
 const summary = { created: 0, updated: 0, profilesCreated: 0 };
 
-for (const email of emails) {
+for (const email of targetEmails) {
   const existingUser = usersByEmail.get(email);
   const result = existingUser
     ? await supabase.auth.admin.updateUserById(existingUser.id, {
@@ -97,14 +108,23 @@ for (const email of emails) {
   if (existingUser) summary.updated += 1;
   else summary.created += 1;
 
-  const { data: profile, error: profileLookupError } = await supabase
-    .from('staff_users')
-    .select('id')
-    .eq('id', result.data.user.id)
-    .maybeSingle();
+  if (isAdmin(email)) {
+    const { error: profileError } = await supabase.from('staff_users').upsert({
+      id: result.data.user.id,
+      organization_id: organization.id,
+      full_name: displayName(email),
+      role: 'admin',
+    }, { onConflict: 'id' });
+    if (profileError) throw new Error(`Could not grant admin profile for ${email}: ${profileError.message}`);
+  } else {
+    const { data: profile, error: profileLookupError } = await supabase
+      .from('staff_users')
+      .select('id')
+      .eq('id', result.data.user.id)
+      .maybeSingle();
 
-  if (profileLookupError) throw profileLookupError;
-  if (!profile) {
+    if (profileLookupError) throw profileLookupError;
+    if (!profile) {
     const { error: profileError } = await supabase.from('staff_users').insert({
       id: result.data.user.id,
       organization_id: organization.id,
@@ -113,7 +133,8 @@ for (const email of emails) {
     });
     if (profileError) throw new Error(`Could not create staff profile for ${email}: ${profileError.message}`);
     summary.profilesCreated += 1;
+    }
   }
 }
 
-console.log(JSON.stringify({ total: emails.length, ...summary }));
+console.log(JSON.stringify({ total: targetEmails.length, ...summary }));

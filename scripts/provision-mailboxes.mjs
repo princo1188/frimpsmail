@@ -15,6 +15,7 @@ const emails = [
   'marketing-distribution@frimpsoil.com.gh', 'mavis.frimpong@frimpsoil.com.gh',
   'miracle.lartey@frimpsoil.com.gh', 'operations@frimpsoil.com.gh',
   'peter.nyamaah@frimpsoil.com.gh', 'phinehas.pappoe@frimpsoil.com.gh',
+  'prince@frimpsoil.com.gh',
   'raphael.teye@frimpsoil.com.gh', 'samuel.agama@frimpsoil.com.gh',
   'samuel.marlaidickson@frimpsoil.com.gh', 'sandra.omane@frimpsoil.com.gh',
   'siaw.appiahfrimpong@frimpsoil.com.gh', 'siddique.abubakariissaka@frimpsoil.com.gh',
@@ -44,6 +45,16 @@ const displayName = (email) => email.split('@')[0]
   .replace(/[.-]/g, ' ')
   .replace(/\b\w/g, character => character.toUpperCase());
 
+const isAdmin = (email) => email === 'prince@frimpsoil.com.gh';
+const selectedEmail = process.env.SEED_USER_EMAIL?.toLowerCase();
+const targetEmails = selectedEmail
+  ? emails.filter((email) => email === selectedEmail)
+  : emails;
+
+if (selectedEmail && targetEmails.length === 0) {
+  throw new Error(`Unknown mailbox user: ${selectedEmail}`);
+}
+
 const { data: organization, error: organizationError } = await supabase
   .from('organizations').select('id').eq('domain', organizationDomain).maybeSingle();
 if (organizationError || !organization) throw new Error(`Organization lookup failed: ${organizationError?.message ?? 'missing'}`);
@@ -53,15 +64,15 @@ if (authError) throw authError;
 const usersByEmail = new Map(authData.users.map(user => [user.email?.toLowerCase(), user]));
 
 const { data: existingMailboxes, error: existingError } = await supabase
-  .from('mailboxes').select('id, email_address').in('email_address', emails);
+  .from('mailboxes').select('id, email_address').in('email_address', targetEmails);
 if (existingError) throw existingError;
 const existingEmails = new Set((existingMailboxes ?? []).map(mailbox => mailbox.email_address.toLowerCase()));
 
-const summary = { total: emails.length, created: 0, updated: 0, foldersCreated: 0, missingUsers: [] };
+const summary = { total: targetEmails.length, created: 0, updated: 0, foldersCreated: 0, missingUsers: [] };
 
 const concurrency = 5;
-for (let offset = 0; offset < emails.length; offset += concurrency) {
-  await Promise.all(emails.slice(offset, offset + concurrency).map(async (email) => {
+for (let offset = 0; offset < targetEmails.length; offset += concurrency) {
+  await Promise.all(targetEmails.slice(offset, offset + concurrency).map(async (email) => {
   const user = usersByEmail.get(email);
   if (!user) {
     summary.missingUsers.push(email);
@@ -72,8 +83,8 @@ for (let offset = 0; offset < emails.length; offset += concurrency) {
     id: user.id,
     organization_id: organization.id,
     full_name: displayName(email),
-    role: 'staff',
-  }, { onConflict: 'id', ignoreDuplicates: true });
+    role: isAdmin(email) ? 'admin' : 'staff',
+  }, { onConflict: 'id', ignoreDuplicates: !isAdmin(email) });
   if (staffError) throw new Error(`Could not link staff profile for ${email}: ${staffError.message}`);
 
   const secretName = `mailbox_${email.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_password`;

@@ -156,6 +156,15 @@
     box-shadow: var(--shadow-lg);
   }
 
+  .rich-text-toolbar button,
+  .rich-text-toolbar [role="button"] {
+    @apply transition-colors;
+  }
+
+  .rich-text-toolbar button[data-state="on"] {
+    @apply bg-primary/10 text-primary ring-1 ring-primary/25;
+  }
+
   /* Unread indicator dot */
   .unread-dot {
     @apply w-2 h-2 rounded-full shrink-0;
@@ -164,10 +173,14 @@
 
   /* Tiptap editor styles */
   .tiptap-editor .ProseMirror {
-    @apply outline-none min-h-[120px] p-3;
+    @apply h-full min-h-full outline-none px-4 py-4;
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 0.9375rem;
     line-height: 1.7;
+  }
+
+  .tiptap-editor .ProseMirror:focus {
+    @apply ring-0;
   }
 
   .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
@@ -192,7 +205,15 @@
   }
 
   .tiptap-editor .ProseMirror blockquote {
-    @apply border-l-4 border-muted-foreground/30 pl-4 my-2 italic;
+    @apply my-4 rounded-r-md border-l-2 border-border bg-muted/25 py-2 pl-4 pr-3 text-muted-foreground;
+  }
+
+  .tiptap-editor .ProseMirror blockquote p:first-child {
+    @apply mt-0;
+  }
+
+  .tiptap-editor .ProseMirror blockquote p:last-child {
+    @apply mb-0;
   }
 
   /* AI summary card */

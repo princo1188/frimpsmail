@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   X, ChevronDown, Paperclip, Clock, Send, Minus, LayoutTemplate,
-  Maximize2, Minimize2, Users
+  Maximize2, Minimize2, Users, Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -90,18 +90,18 @@ function RecipientInput({
 
   return (
     <div className="relative">
-      <div className="flex flex-wrap items-center gap-1 px-3 py-1.5 border-b border-border min-h-[36px]">
-        <span className="text-xs text-muted-foreground shrink-0 w-6">{label}</span>
+      <div className="flex min-h-[42px] flex-wrap items-center gap-1.5 border-b border-border/70 px-4 py-2 transition-colors focus-within:bg-muted/20">
+        <span className="w-8 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
         {value.map(addr => (
-          <Badge key={addr} variant="secondary" className="flex items-center gap-1 py-0.5">
-            {addr}
-            <button onClick={() => onChange(value.filter(a => a !== addr))} className="ml-0.5 hover:text-foreground">
+          <Badge key={addr} variant="secondary" className="flex max-w-[220px] items-center gap-1 rounded-full border border-border/70 bg-secondary/80 px-2 py-1 text-xs font-medium">
+            <span className="truncate">{addr}</span>
+            <button onClick={() => onChange(value.filter(a => a !== addr))} className="ml-0.5 shrink-0 rounded-full hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40">
               <X className="w-3 h-3" />
             </button>
           </Badge>
         ))}
         <input
-          className="flex-1 min-w-[120px] text-sm bg-transparent outline-none px-1"
+          className="flex-1 min-w-[140px] bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground/70"
           value={input}
           onChange={e => { setInput(e.target.value); search(e.target.value); }}
           onKeyDown={e => {
@@ -301,6 +301,19 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void saveDraft();
     onClose();
+  };
+
+  const handleDiscard = async () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    try {
+      if (draftRef.current) await discardLocalDraft(draftRef.current.threadId);
+      toast.success('Draft discarded');
+    } catch (error) {
+      console.error('Failed to discard draft', error);
+      toast.error('Could not discard draft');
+    } finally {
+      onClose();
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -520,74 +533,83 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
   const composeClasses = mode === 'compose'
     ? expanded
       ? 'fixed inset-4 md:inset-8 w-auto h-auto z-50'
-      : 'fixed bottom-4 right-4 w-[min(910px,calc(100vw-2rem))] z-50 max-h-[85vh] md:h-[490px]'
-    : 'w-full flex flex-col min-h-[380px]';
+      : 'fixed bottom-4 right-4 w-[min(910px,calc(100vw-2rem))] z-50 h-[min(760px,calc(100dvh-2rem))] md:h-[560px]'
+    : 'w-full flex flex-col h-[min(680px,calc(100dvh-7rem))] min-h-[420px]';
 
   return (
-    <div className={cn('compose-panel flex flex-col', composeClasses)}>
+    <div className={cn('compose-panel flex flex-col overflow-hidden', composeClasses)}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-foreground text-background rounded-t-lg">
-        <span className="text-sm font-medium">{mode === 'compose' ? 'New Message' : mode === 'forward' ? 'Forward' : 'Reply'}</span>
+      <div className="flex h-11 shrink-0 items-center justify-between rounded-t-lg border-b border-border/70 bg-card px-4 text-card-foreground">
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{mode === 'compose' ? 'New Message' : mode === 'forward' ? 'Forward' : 'Reply'}</span>
+          {activeMailbox && (
+            <span className="block truncate text-[11px] leading-3 text-muted-foreground">{activeMailbox.email_address}</span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           {mode === 'compose' && (
             <>
-              <button onClick={() => setMinimized(true)} className="hover:text-background/70" title="Minimize">
+              <button onClick={() => setMinimized(true)} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40" title="Minimize">
                 <Minus className="w-4 h-4" />
               </button>
-              <button onClick={() => setExpanded(e => !e)} className="hover:text-background/70" title={expanded ? 'Shrink' : 'Expand'}>
+              <button onClick={() => setExpanded(e => !e)} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40" title={expanded ? 'Shrink' : 'Expand'}>
                 {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             </>
           )}
-          <button onClick={handleClose} className="hover:text-background/70" title="Close">
+          <button onClick={handleClose} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40" title="Close">
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <div className="flex flex-col flex-1 overflow-hidden bg-card rounded-b-lg border border-border border-t-0">
-        {/* Recipients */}
-        <RecipientInput label="To" value={to} onChange={setTo} />
-        {showCcBcc && (
-          <>
-            <RecipientInput label="CC" value={cc} onChange={setCc} />
-            <RecipientInput label="BCC" value={bcc} onChange={setBcc} />
-          </>
-        )}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-lg bg-card">
+        <div className="shrink-0 bg-card">
+          {/* Recipients */}
+          <RecipientInput label="To" value={to} onChange={setTo} />
+          {showCcBcc && (
+            <>
+              <RecipientInput label="Cc" value={cc} onChange={setCc} />
+              <RecipientInput label="Bcc" value={bcc} onChange={setBcc} />
+            </>
+          )}
 
-        {/* Subject */}
-        <div className="flex items-center gap-2 px-3 border-b border-border">
-          <Input
-            value={subject}
-            onChange={e => setSubject(e.target.value)}
-            placeholder="Subject"
-            className="border-0 shadow-none px-0 h-9 text-sm focus-visible:ring-0"
-          />
-          <button
-            onClick={() => setShowCcBcc(!showCcBcc)}
-            className="text-xs text-muted-foreground hover:text-foreground shrink-0"
-          >
-            {showCcBcc ? 'Hide' : 'CC/BCC'}
-          </button>
+          {/* Subject */}
+          <div className="flex min-h-[42px] items-center gap-3 border-b border-border/70 px-4 transition-colors focus-within:bg-muted/20">
+            <Input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="Subject"
+              className="h-10 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+            />
+            <button
+              onClick={() => setShowCcBcc(!showCcBcc)}
+              className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+            >
+              {showCcBcc ? 'Hide Cc/Bcc' : 'Cc/Bcc'}
+            </button>
+          </div>
         </div>
 
         {/* Rich text toolbar */}
-        <RichTextToolbar editor={editor} onInlineImage={() => inlineImageRef.current?.click()} />
+        <div className="shrink-0">
+          <RichTextToolbar editor={editor} onInlineImage={() => inlineImageRef.current?.click()} />
+        </div>
         <input ref={inlineImageRef} type="file" accept="image/*" className="hidden" onChange={handleInlineImageUpload} />
 
         {/* Editor */}
-        <div className={cn('tiptap-editor flex-1 overflow-y-auto', expanded ? 'min-h-0' : 'min-h-[160px]')}>
+        <div className={cn('tiptap-editor min-h-0 flex-1 overflow-y-auto bg-card', expanded ? 'min-h-0' : '')}>
           <EditorContent editor={editor} className="h-full" />
         </div>
 
         {/* Attachments list */}
         {attachments.length > 0 && (
-          <div className="px-3 py-2 border-t border-border flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2 border-t border-border/70 bg-muted/20 px-4 py-2">
             {attachments.map(({ file, path }) => (
-              <Badge key={path} variant="secondary" className="flex items-center gap-1">
+              <Badge key={path} variant="secondary" className="flex max-w-full items-center gap-1 rounded-full px-2 py-1">
                 <Paperclip className="w-3 h-3" />
-                {file.name}
-                <button onClick={() => setAttachments(prev => prev.filter(a => a.path !== path))}>
+                <span className="truncate">{file.name}</span>
+                <button className="shrink-0 rounded-full hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40" onClick={() => setAttachments(prev => prev.filter(a => a.path !== path))}>
                   <X className="w-3 h-3" />
                 </button>
               </Badge>
@@ -597,7 +619,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
         {/* Templates picker */}
         {showTemplates && templates.length > 0 && (
-          <div className="border-t border-border bg-muted/30 max-h-48 overflow-y-auto">
+          <div className="max-h-48 shrink-0 overflow-y-auto border-t border-border/70 bg-muted/30">
             <p className="text-xs font-medium px-3 pt-2 pb-1 text-muted-foreground">Email Templates</p>
             {templates.map(t => (
               <button
@@ -619,7 +641,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
         {/* Group picker panel */}
         {showGroupPicker && (
-          <div className="border-t border-border bg-muted/30">
+          <div className="shrink-0 border-t border-border/70 bg-muted/30">
             <div className="flex items-center justify-between px-3 pt-2 pb-1">
               <p className="text-xs font-medium text-muted-foreground">Insert Group into:</p>
               <div className="flex gap-1">
@@ -680,7 +702,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
         {/* Schedule popover */}
         {showSchedule && (
-          <div className="px-3 py-2 border-t border-border bg-muted/30">
+          <div className="shrink-0 border-t border-border/70 bg-muted/30 px-4 py-3">
             <p className="text-xs font-medium mb-2">Schedule send:</p>
             <div className="flex flex-wrap gap-2">
               {SCHEDULE_OPTIONS.map(opt => (
@@ -701,9 +723,9 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
           </div>
         )}
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-1 px-3 py-2 border-t border-border">
-          <Button size="sm" onClick={handleSend} disabled={sending || sendCountdown > 0} className="rounded-full px-4">
+        {/* Action bar */}
+        <div className="sticky bottom-0 z-10 flex shrink-0 items-center gap-2 border-t border-border/80 bg-card/95 px-4 py-3 shadow-[0_-10px_24px_rgba(0,0,0,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/85">
+          <Button size="sm" onClick={handleSend} disabled={sending || sendCountdown > 0} className="h-9 rounded-full px-5 font-semibold shadow-sm">
             {sending ? (
               <span className="flex items-center gap-1.5"><span className="h-3 w-3 border border-primary-foreground border-t-transparent rounded-full animate-spin" /> Sending…</span>
             ) : sendCountdown > 0 ? (
@@ -713,22 +735,24 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
             )}
           </Button>
 
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Attach file" onClick={() => fileRef.current?.click()}>
+          <Separator orientation="vertical" className="mx-1 h-6" />
+
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" title="Attach file" onClick={() => fileRef.current?.click()}>
             {uploadingFile ? <span className="h-4 w-4 border border-foreground border-t-transparent rounded-full animate-spin" /> : <Paperclip className="w-4 h-4" />}
           </Button>
           <input ref={fileRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
 
-          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showSchedule && 'text-primary')} title="Schedule send" onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); setShowGroupPicker(false); }}>
+          <Button variant="ghost" size="icon" className={cn('h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40', (showSchedule || scheduleAt) && 'bg-primary/10 text-primary')} title="Schedule send" onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); setShowGroupPicker(false); }}>
             <Clock className="w-4 h-4" />
           </Button>
 
-          <Button variant="ghost" size="icon" className={cn('h-8 w-8', showTemplates && 'text-primary')} title="Email templates" onClick={() => { setShowTemplates(!showTemplates); setShowSchedule(false); setShowGroupPicker(false); }}>
+          <Button variant="ghost" size="icon" className={cn('h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40', showTemplates && 'bg-primary/10 text-primary')} title="Email templates" onClick={() => { setShowTemplates(!showTemplates); setShowSchedule(false); setShowGroupPicker(false); }}>
             <LayoutTemplate className="w-4 h-4" />
           </Button>
 
           <Button
             variant="ghost" size="icon"
-            className={cn('h-8 w-8', showGroupPicker && 'text-primary')}
+            className={cn('h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40', showGroupPicker && 'bg-primary/10 text-primary')}
             title="Insert group"
             onClick={() => { setShowGroupPicker(p => !p); setShowTemplates(false); setShowSchedule(false); }}
           >
@@ -737,10 +761,13 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
           <div className="flex-1" />
           {scheduleAt && (
-            <span className="text-xs text-muted-foreground">
+            <span className="hidden truncate text-xs text-muted-foreground sm:block">
               Sending {format(scheduleAt, 'dd MMM, HH:mm')}
             </span>
           )}
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40" title="Discard draft" onClick={handleDiscard}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </div>

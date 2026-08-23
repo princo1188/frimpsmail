@@ -58,7 +58,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
   const currentSize = editor.getAttributes('textStyle').fontSize ?? '16px';
 
   return (
-    <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-border bg-muted/20">
+    <div className="rich-text-toolbar flex max-h-24 shrink-0 flex-wrap items-center gap-1 overflow-y-auto border-b border-border/70 bg-muted/30 px-3 py-2 shadow-[0_1px_0_rgba(255,255,255,0.03)]">
       {/* Text style */}
       <Toggle
         size="sm" aria-label="Bold"
@@ -93,7 +93,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
 
       {/* Font family */}
       <Select value={currentFont} onValueChange={(value) => editor.chain().focus().setFontFamily(value).run()}>
-        <SelectTrigger className="h-8 w-[120px] text-xs">
+        <SelectTrigger className="h-8 w-[120px] border-border/70 bg-background/70 text-xs">
           <Type className="w-3 h-3 mr-1" />
           <SelectValue />
         </SelectTrigger>
@@ -106,7 +106,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
 
       {/* Font size */}
       <Select value={currentSize} onValueChange={(value) => editor.chain().focus().setFontSize(value).run()}>
-        <SelectTrigger className="h-8 w-[90px] text-xs">
+        <SelectTrigger className="h-8 w-[90px] border-border/70 bg-background/70 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -122,7 +122,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
       <div className="relative">
         <button
           onClick={() => colorInputRef.current?.click()}
-          className="h-8 px-2 rounded-md hover:bg-muted flex items-center gap-1 text-xs"
+          className="flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
           title="Text color"
         >
           <span className="font-semibold" style={{ color: textColor }}>A</span>
@@ -144,7 +144,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
       <div className="relative">
         <button
           onClick={() => highlightInputRef.current?.click()}
-          className="h-8 px-2 rounded-md hover:bg-muted flex items-center gap-1 text-xs"
+          className="flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
           title="Highlight color"
         >
           <Highlighter className="w-4 h-4" style={{ color: highlightColor }} />

@@ -1,6 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { MailProvider } from '@/contexts/MailContext';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { TopBar, SideRailContent, useKeyboardShortcuts } from '@/components/layouts/MailLayout';
 import ThreadList from '@/components/mail/ThreadList';
 import ReadingPane from '@/components/mail/ReadingPane';
@@ -29,9 +28,7 @@ function InboxInner() {
     unreadCount,
   } = useMail();
   const { staffUser } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [activeMobilePane, setActiveMobilePane] = useState<'folders' | 'threads' | 'reading'>('threads');
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
 
   const threadIndex = activeThread ? threads.findIndex(t => t.id === activeThread.id) : -1;
@@ -168,9 +165,5 @@ function InboxInner() {
 }
 
 export default function InboxPage() {
-  return (
-    <MailProvider>
-      <InboxInner />
-    </MailProvider>
-  );
+  return <InboxInner />;
 }

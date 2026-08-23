@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -6,6 +7,8 @@ import { MailProvider } from '@/contexts/MailContext';
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AdminRoute from '@/components/AdminRoute';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
+import CommandPalette from '@/components/mail/CommandPalette';
 import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
 import InboxPage from '@/pages/InboxPage';
@@ -22,29 +25,57 @@ import AdminSyncStatusPage from '@/pages/AdminSyncStatusPage';
 import ResourceSchedulePage from '@/pages/ResourceSchedulePage';
 import FollowUpsPage from '@/pages/FollowUpsPage';
 
+function PublicModule({ name, children }: { name: string; children: ReactNode }) {
+  return <ErrorBoundary moduleName={name}>{children}</ErrorBoundary>;
+}
+
+function MailModule({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <MailProvider>
+        <ErrorBoundary moduleName={name}>
+          <CommandPalette />
+          {children}
+        </ErrorBoundary>
+      </MailProvider>
+    </ProtectedRoute>
+  );
+}
+
+function AdminModule({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <AdminRoute>
+      <ErrorBoundary moduleName={name}>{children}</ErrorBoundary>
+    </AdminRoute>
+  );
+}
+
 function AppRoutes() {
   useGlobalShortcuts();
   return (
     <Routes>
       {/* Public */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<PublicModule name="Landing"><LandingPage /></PublicModule>} />
+      <Route path="/login" element={<PublicModule name="Login"><LoginPage /></PublicModule>} />
       {/* MFA flow — semi-authenticated (password done, MFA pending) */}
-      <Route path="/setup-2fa" element={<Setup2FAPage />} />
-      <Route path="/verify-2fa" element={<Verify2FAPage />} />
+      <Route path="/setup-2fa" element={<PublicModule name="Two-factor setup"><Setup2FAPage /></PublicModule>} />
+      <Route path="/verify-2fa" element={<PublicModule name="Two-factor verification"><Verify2FAPage /></PublicModule>} />
       {/* Protected (requires AAL2) */}
-      <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
-      <Route path="/inbox/contacts" element={<ProtectedRoute><MailProvider><ContactsPage /></MailProvider></ProtectedRoute>} />
-      <Route path="/inbox/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
-      <Route path="/inbox/follow-ups" element={<ProtectedRoute><FollowUpsPage /></ProtectedRoute>} />
-      <Route path="/inbox/resource-schedule" element={<ProtectedRoute><ResourceSchedulePage /></ProtectedRoute>} />
-      <Route path="/inbox/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/inbox" element={<MailModule name="Inbox"><InboxPage /></MailModule>} />
+      <Route path="/inbox/contacts" element={<MailModule name="Contacts"><ContactsPage /></MailModule>} />
+      <Route path="/inbox/groups" element={<Navigate to="/inbox/contacts?tab=groups" replace />} />
+      <Route path="/inbox/calendar" element={<MailModule name="Calendar"><CalendarPage /></MailModule>} />
+      <Route path="/inbox/schedule" element={<Navigate to="/inbox/calendar" replace />} />
+      <Route path="/inbox/follow-ups" element={<MailModule name="Follow-ups"><FollowUpsPage /></MailModule>} />
+      <Route path="/inbox/resource-schedule" element={<MailModule name="Resource schedule"><ResourceSchedulePage /></MailModule>} />
+      <Route path="/inbox/resources" element={<Navigate to="/inbox/resource-schedule" replace />} />
+      <Route path="/inbox/settings" element={<MailModule name="Settings"><SettingsPage /></MailModule>} />
       {/* Admin (requires AAL2 + admin role) */}
-      <Route path="/admin/mailboxes" element={<AdminRoute><AdminMailboxesPage /></AdminRoute>} />
-      <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
-      <Route path="/admin/webhooks" element={<AdminRoute><WebhooksPage /></AdminRoute>} />
-      <Route path="/admin/resources" element={<AdminRoute><AdminResourcesPage /></AdminRoute>} />
-      <Route path="/admin/sync-status" element={<AdminRoute><AdminSyncStatusPage /></AdminRoute>} />
+      <Route path="/admin/mailboxes" element={<AdminModule name="Admin mailboxes"><AdminMailboxesPage /></AdminModule>} />
+      <Route path="/admin/dashboard" element={<AdminModule name="Admin dashboard"><AdminDashboardPage /></AdminModule>} />
+      <Route path="/admin/webhooks" element={<AdminModule name="Webhooks"><WebhooksPage /></AdminModule>} />
+      <Route path="/admin/resources" element={<AdminModule name="Resources"><AdminResourcesPage /></AdminModule>} />
+      <Route path="/admin/sync-status" element={<AdminModule name="Sync status"><AdminSyncStatusPage /></AdminModule>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

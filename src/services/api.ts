@@ -1,5 +1,5 @@
 import { supabase } from '@/db/supabase';
-import { Thread, Message, Contact, Signature, Rule, CalendarEvent, SearchFilters,
+import { Thread, Message, Attachment, Contact, Signature, Rule, CalendarEvent, SearchFilters,
   EmailTemplate, ContactGroup, SavedSearch, FollowUpReminder,
   WebhookEndpoint, ApiKey, MailboxDelegate, CalendarEventAttachment, Resource, ResourceBooking
 } from '@/types/types';
@@ -675,12 +675,15 @@ export async function removeDelegate(id: string) {
 // FULL-TEXT SEARCH (enhanced)
 // ============================================================
 export async function fullTextSearch(mailboxId: string, query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return { messages: [], contacts: [], events: [], attachments: [] };
+
   // Try FTS on messages
   const { data: msgData, error: msgError } = await supabase
     .from('messages')
     .select('thread_id, subject, from_address, from_name, body_text, sent_at')
     .eq('mailbox_id', mailboxId)
-    .or(`subject.ilike.%${query}%,from_address.ilike.%${query}%,from_name.ilike.%${query}%,body_text.ilike.%${query}%`)
+    .or(`subject.ilike.%${trimmed}%,from_address.ilike.%${trimmed}%,from_name.ilike.%${trimmed}%,body_text.ilike.%${trimmed}%`)
     .order('sent_at', { ascending: false })
     .limit(50);
   if (msgError) throw msgError;
@@ -695,13 +698,36 @@ export async function fullTextSearch(mailboxId: string, query: string) {
       .from('contacts')
       .select('*')
       .eq('organization_id', orgId)
-      .or(`name.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%`)
+      .or(`name.ilike.%${trimmed}%,email.ilike.%${trimmed}%,company.ilike.%${trimmed}%`)
       .limit(10);
     if (contactError) throw contactError;
     contactMatches = (Array.isArray(cData) ? cData : []) as Contact[];
   }
 
-  return { messages: Array.isArray(msgData) ? msgData : [], contacts: contactMatches };
+  let events: CalendarEvent[] = [];
+  let attachments: Attachment[] = [];
+  if (orgId) {
+    const { data: eventData, error: eventError } = await supabase
+      .from('calendar_events')
+      .select('id, organization_id, created_by, title, description, agenda, start_at, end_at, location, attendees, department, status, is_task, is_completed, recurrence_rule, recurrence_end_date, parent_event_id, reminder_minutes_before, reminder_sent_at, created_at')
+      .eq('organization_id', orgId)
+      .or(`title.ilike.%${trimmed}%,description.ilike.%${trimmed}%,agenda.ilike.%${trimmed}%,location.ilike.%${trimmed}%`)
+      .order('start_at', { ascending: false })
+      .limit(10);
+    if (eventError) throw eventError;
+    events = (Array.isArray(eventData) ? eventData : []) as CalendarEvent[];
+  }
+
+  const { data: attachmentData, error: attachmentError } = await supabase
+    .from('attachments')
+    .select('id, message_id, storage_path, filename, mime_type, size_bytes, created_at, messages!inner(mailbox_id)')
+    .eq('messages.mailbox_id', mailboxId)
+    .ilike('filename', `%${trimmed}%`)
+    .limit(10);
+  if (attachmentError) throw attachmentError;
+  attachments = (Array.isArray(attachmentData) ? attachmentData : []) as Attachment[];
+
+  return { messages: Array.isArray(msgData) ? msgData : [], contacts: contactMatches, events, attachments };
 }
 
 // ============================================================

@@ -71,4 +71,19 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (/[\\/]node_modules[\\/].pnpm[\\/](react|react-dom|react-router|react-router-dom)@/.test(id)) return "vendor-react";
+          if (id.includes("@radix-ui") || id.includes("cmdk") || id.includes("lucide-react")) return "vendor-ui";
+          if (id.includes("@supabase")) return "vendor-supabase";
+          const match = id.match(/[\\/]node_modules[\\/](?:\.pnpm[\\/])?(@?[^\\/]+)/);
+          if (!match) return "vendor";
+          return `vendor-${match[1].replace("@", "").replace(/[+._]/g, "-")}`;
+        },
+      },
+    },
+  },
 });

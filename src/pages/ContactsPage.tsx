@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Pencil, Trash2, Search, UserPlus, Users, UserCheck, X, ChevronDown, ChevronRight, Eye, Mail, Phone, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -683,6 +683,9 @@ function GroupsTab() {
 
 // ─── Page Root ────────────────────────────────────────────────────────────────
 export default function ContactsPage() {
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'groups' ? 'groups' : 'contacts';
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-card px-6 py-4 flex items-center gap-4">
@@ -691,7 +694,7 @@ export default function ContactsPage() {
       </div>
 
       <div className="max-w-4xl mx-auto p-6">
-        <Tabs defaultValue="contacts">
+        <Tabs key={tab} defaultValue={tab}>
           <TabsList className="mb-6">
             <TabsTrigger value="contacts" className="flex items-center gap-1.5">
               <UserPlus className="w-3.5 h-3.5" /> Contacts

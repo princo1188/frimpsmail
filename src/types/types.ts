@@ -246,7 +246,7 @@ export interface ScheduledMessage {
 }
 
 // UI state types
-export type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive';
+export type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'custom';
 
 export interface ComposeData {
   to: string[];

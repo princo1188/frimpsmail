@@ -9,6 +9,8 @@ interface Props {
 const SHORTCUTS = [
   { group: 'Navigation', items: [
     { keys: ['c'], label: 'Compose new email' },
+    { keys: ['Ctrl', 'k'], label: 'Open command palette' },
+    { keys: ['/'], label: 'Focus search' },
     { keys: ['j'], label: 'Next thread' },
     { keys: ['k'], label: 'Previous thread' },
     { keys: ['?'], label: 'Show keyboard shortcuts' },

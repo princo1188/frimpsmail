@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   X, ChevronDown, Paperclip, Clock, Send, Minus, LayoutTemplate,
-  Maximize2, Minimize2, Users, Trash2
+  Maximize2, Minimize2, Users, Trash2, Sparkles, Wand2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -194,6 +194,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
   const [showSchedule, setShowSchedule] = useState(false);
   const [undoTimer, setUndoTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [sendCountdown, setSendCountdown] = useState(0);
+  const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const inlineImageRef = useRef<HTMLInputElement>(null);
   const sendAbortRef = useRef<(() => void) | null>(null);
@@ -323,8 +324,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+  const uploadFiles = async (files: File[]) => {
     if (!files.length || !activeMailbox) return;
     setUploadingFile(true);
     try {
@@ -334,10 +334,24 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
         if (error) throw error;
         setAttachments(prev => [...prev, { file, path }]);
       }
+      toast.success(`${files.length} attachment${files.length !== 1 ? 's' : ''} added`);
     } catch {
       toast.error('Failed to upload attachment');
     } finally {
       setUploadingFile(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await uploadFiles(Array.from(e.target.files ?? []));
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleAttachmentDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      await uploadFiles(files);
       if (fileRef.current) fileRef.current.value = '';
     }
   };
@@ -425,6 +439,53 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const currentPlainText = () => (editor?.getText() ?? '').replace(/\s+/g, ' ').trim();
+
+  const insertSmartDraft = async () => {
+    if (!editor) return;
+    setAiBusy(true);
+    try {
+      if (replyTo?.thread_id) {
+        const { data, error } = await supabase.functions.invoke('reply-draft', {
+          body: { thread_id: replyTo.thread_id, tone: 'helpful and concise' },
+        });
+        if (error) throw error;
+        if (data?.draft) {
+          editor.commands.setContent(data.draft);
+          toast.success('Smart draft added');
+          return;
+        }
+      }
+
+      const greeting = to.length ? `Hi ${to[0].split('@')[0].split(/[.<_ -]/)[0] || 'there'},` : 'Hi,';
+      editor.commands.setContent(`<p>${greeting}</p><p>Thanks for your message. I wanted to follow up on ${subject || 'this'} and share the next steps.</p><p>Best regards,</p>`);
+      toast.success('Draft starter added');
+    } catch (error) {
+      console.error('Smart draft failed', error);
+      toast.error('Could not generate a smart draft');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const summarizeDraft = () => {
+    const text = currentPlainText();
+    if (!text) { toast.info('Write a draft first, then summarize it'); return; }
+    const summary = text.length > 180 ? `${text.slice(0, 177)}...` : text;
+    toast.info(summary, { duration: 8000 });
+  };
+
+  const adjustTone = (tone: 'professional' | 'friendly') => {
+    if (!editor) return;
+    const text = currentPlainText();
+    if (!text) { toast.info('Write a draft first, then adjust its tone'); return; }
+    const prefix = tone === 'professional'
+      ? 'Please find a concise update below.'
+      : 'Thanks for reaching out. I am happy to help.';
+    editor.commands.setContent(`<p>${prefix}</p><p>${text}</p>`);
+    toast.success(`Tone adjusted to ${tone}`);
   };
 
   const handleSend = async () => {
@@ -544,7 +605,11 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     : 'w-full flex flex-col h-[min(680px,calc(100dvh-7rem))] min-h-[420px]';
 
   return (
-    <div className={cn('compose-panel flex flex-col overflow-hidden', composeClasses)}>
+    <div
+      className={cn('compose-panel flex flex-col overflow-hidden', composeClasses)}
+      onDragOver={event => event.preventDefault()}
+      onDrop={handleAttachmentDrop}
+    >
       {/* Header */}
       <div className="flex h-11 shrink-0 items-center justify-between rounded-t-lg border-b border-border/70 bg-card px-4 text-card-foreground">
         <div className="min-w-0">
@@ -764,6 +829,21 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
             onClick={() => { setShowGroupPicker(p => !p); setShowTemplates(false); setShowSchedule(false); }}
           >
             <Users className="w-4 h-4" />
+          </Button>
+
+          <Separator orientation="vertical" className="mx-1 h-6" />
+
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" title="Generate smart draft" onClick={insertSmartDraft} disabled={aiBusy}>
+            {aiBusy ? <span className="h-4 w-4 border border-foreground border-t-transparent rounded-full animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40" title="Summarize draft" onClick={summarizeDraft}>
+            <Wand2 className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="sm" className="hidden h-8 rounded-full px-3 text-xs md:inline-flex" onClick={() => adjustTone('professional')}>
+            Professional
+          </Button>
+          <Button variant="outline" size="sm" className="hidden h-8 rounded-full px-3 text-xs md:inline-flex" onClick={() => adjustTone('friendly')}>
+            Friendly
           </Button>
 
           <div className="flex-1" />

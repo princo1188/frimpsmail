@@ -64,6 +64,7 @@ export function TopBar({ onCompose }: TopBarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (staffUser) {
@@ -101,6 +102,12 @@ export function TopBar({ onCompose }: TopBarProps) {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  useEffect(() => {
+    const focusSearch = () => searchInputRef.current?.focus();
+    window.addEventListener('fmail:focus-search', focusSearch);
+    return () => window.removeEventListener('fmail:focus-search', focusSearch);
+  }, []);
+
   return (
     <>
       <header className="h-14 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0 col-span-3">
@@ -136,6 +143,7 @@ export function TopBar({ onCompose }: TopBarProps) {
         <div className="flex-1 max-w-xl mx-auto relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <Input
+            ref={searchInputRef}
             placeholder="Search mail… (try 'emails from John last week')"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -251,7 +259,10 @@ interface SideRailContentProps {
 }
 
 export function SideRailContent({ onCompose, onFolderClick }: SideRailContentProps) {
-  const { activeFolder, setActiveFolder, setActiveThread, mailboxes, activeMailbox, setActiveMailbox, unreadCount, setSearchQuery } = useMail();
+  const {
+    activeFolder, setActiveFolder, setActiveThread, mailboxes, activeMailbox, setActiveMailbox,
+    unreadCount, setSearchQuery, folders, moveThreadToFolder,
+  } = useMail();
   const { staffUser } = useAuth();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const navigate = useNavigate();
@@ -275,6 +286,17 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
     onFolderClick?.();
     navigate('/inbox');
   };
+
+  const handleThreadDrop = (event: React.DragEvent, folderId: string | null, label: string) => {
+    event.preventDefault();
+    const threadId = event.dataTransfer.getData('application/x-fmail-thread-id');
+    if (!threadId) return;
+    moveThreadToFolder(threadId, folderId, label);
+    onFolderClick?.();
+  };
+
+  const folderIdFor = (type: FolderType) => folders.find(folder => folder.normalized_type === type)?.id ?? null;
+  const customFolders = folders.filter(folder => folder.normalized_type === 'custom');
 
   const handleSavedSearch = (s: SavedSearch) => {
     setSearchQuery(savedSearchQuery(s));
@@ -318,6 +340,8 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
         {FOLDERS.map(({ type, label, icon: Icon }) => (
           <button
             key={type}
+            onDragOver={event => event.preventDefault()}
+            onDrop={event => handleThreadDrop(event, folderIdFor(type), label)}
             onClick={() => handleFolder(type)}
             className={cn(
               'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
@@ -340,6 +364,30 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
             )}
           </button>
         ))}
+
+        {customFolders.length > 0 && (
+          <div className="pt-2 mt-2 border-t border-sidebar-border">
+            <p className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Labels</p>
+            {customFolders.map(folder => (
+              <button
+                key={folder.id}
+                onDragOver={event => event.preventDefault()}
+                onDrop={event => handleThreadDrop(event, folder.id, folder.display_name ?? folder.imap_folder_name)}
+                onClick={() => {
+                  setActiveFolder('custom');
+                  setActiveThread(null);
+                  setSearchQuery('');
+                  onFolderClick?.();
+                  navigate('/inbox');
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              >
+                <Archive className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left truncate">{folder.display_name ?? folder.imap_folder_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Saved Searches */}
         {savedSearches.length > 0 && (

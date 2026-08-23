@@ -14,6 +14,16 @@ export function useGlobalShortcuts() {
         e.preventDefault();
         if (!isTyping) toggleTheme();
       }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('fmail:open-command-palette'));
+      }
+
+      if (!isTyping && !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '/') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('fmail:focus-search'));
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);

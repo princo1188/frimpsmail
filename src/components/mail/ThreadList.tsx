@@ -186,6 +186,11 @@ export default function ThreadList() {
           return (
             <div
               key={thread.id}
+              draggable
+              onDragStart={event => {
+                event.dataTransfer.setData('application/x-fmail-thread-id', thread.id);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
               onClick={() => handleThreadClick(thread)}
               className={cn(
                 'flex items-start gap-2 px-3 py-3 border-b border-border cursor-pointer transition-colors group',

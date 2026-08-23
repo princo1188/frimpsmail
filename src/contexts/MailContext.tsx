@@ -23,6 +23,7 @@ interface MailContextType {
   starThread: (threadId: string, starred: boolean) => void;
   archiveThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
+  moveThreadToFolder: (threadId: string, folderId: string | null, label?: string) => void;
   snoozeThread: (threadId: string, until: Date) => void;
   moveToSpam: (threadId: string) => void;
   searchQuery: string;
@@ -254,6 +255,18 @@ export function MailProvider({ children }: { children: ReactNode }) {
     }
   }, [folders, loadThreads]);
 
+  const moveThreadToFolder = useCallback(async (threadId: string, folderId: string | null, label = 'folder') => {
+    setThreads(prev => prev.filter(t => t.id !== threadId));
+    try {
+      const { error } = await supabase.from('threads').update({ folder_id: folderId }).eq('id', threadId);
+      if (error) throw error;
+      toast.success(`Moved to ${label}`);
+    } catch (error) {
+      reportMailError(`Failed to move thread to ${label}`, error);
+      void loadThreads();
+    }
+  }, [loadThreads]);
+
   const snoozeThread = useCallback(async (threadId: string, until: Date) => {
     setThreads(prev => prev.filter(t => t.id !== threadId));
     try {
@@ -288,7 +301,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
       threads, activeThread, setActiveThread,
       activeMessages, loadingThreads, loadingMessages, unreadCount,
       refreshThreads: loadThreads,
-      markThreadRead, starThread, archiveThread, deleteThread, snoozeThread, moveToSpam,
+      markThreadRead, starThread, archiveThread, deleteThread, moveThreadToFolder, snoozeThread, moveToSpam,
       searchQuery, setSearchQuery,
       composing, setComposing,
       replyTo, setReplyTo,

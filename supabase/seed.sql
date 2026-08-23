@@ -86,9 +86,6 @@ WHERE name IN (
      'david.asante@example.com'
    );
 
-DELETE FROM public.calendar_events
-WHERE title IN ('Tanker GH-4421', 'GCB Bank signing', 'NPA Inspections');
-
 -- Mailboxes for all reset-seeded staff users. Credentials are kept in Vault so
 -- the persistent sync service can connect without exposing webmail passwords.
 DO $$

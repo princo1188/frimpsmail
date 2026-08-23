@@ -34,8 +34,8 @@ const folders = [
 ];
 
 const url = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SECRET_KEY;
-if (!url || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SECRET_KEY are required.');
+const serviceRoleKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!url || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY are required.');
 
 const supabase = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -45,8 +45,13 @@ const displayName = (email) => email.split('@')[0]
   .replace(/[.-]/g, ' ')
   .replace(/\b\w/g, character => character.toUpperCase());
 
-const isAdmin = (email) => email === 'prince@frimpsoil.com.gh';
+const adminEmails = new Set([
+  'audit@frimpsoil.com.gh',
+  'prince@frimpsoil.com.gh',
+]);
+const isAdmin = (email) => adminEmails.has(email);
 const selectedEmail = process.env.SEED_USER_EMAIL?.toLowerCase();
+const retiredUserEmail = process.env.RETIRED_USER_EMAIL?.toLowerCase();
 const targetEmails = selectedEmail
   ? emails.filter((email) => email === selectedEmail)
   : emails;
@@ -62,6 +67,22 @@ if (organizationError || !organization) throw new Error(`Organization lookup fai
 const { data: authData, error: authError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
 if (authError) throw authError;
 const usersByEmail = new Map(authData.users.map(user => [user.email?.toLowerCase(), user]));
+
+const retiredUser = retiredUserEmail ? usersByEmail.get(retiredUserEmail) : null;
+const cleanup = { retiredMailboxesDeleted: 0, retiredUserDeleted: false };
+if (retiredUser) {
+  const { data: deletedMailboxes, error: mailboxCleanupError } = await supabase
+    .from('mailboxes')
+    .delete()
+    .eq('staff_user_id', retiredUser.id)
+    .select('id');
+  if (mailboxCleanupError) throw new Error(`Could not remove retired mailboxes: ${mailboxCleanupError.message}`);
+  cleanup.retiredMailboxesDeleted = deletedMailboxes?.length ?? 0;
+
+  const { error: retiredUserCleanupError } = await supabase.auth.admin.deleteUser(retiredUser.id);
+  if (retiredUserCleanupError) throw new Error(`Could not remove retired user: ${retiredUserCleanupError.message}`);
+  cleanup.retiredUserDeleted = true;
+}
 
 const { data: existingMailboxes, error: existingError } = await supabase
   .from('mailboxes').select('id, email_address').in('email_address', targetEmails);
@@ -128,4 +149,4 @@ for (let offset = 0; offset < targetEmails.length; offset += concurrency) {
 }
 
 if (summary.missingUsers.length) throw new Error(`Missing auth users: ${summary.missingUsers.join(', ')}`);
-console.log(JSON.stringify(summary));
+console.log(JSON.stringify({ ...summary, cleanup }));

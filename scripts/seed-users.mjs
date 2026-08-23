@@ -41,10 +41,10 @@ const emails = [
 ];
 
 const url = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SECRET_KEY;
+const serviceRoleKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!url || !serviceRoleKey) {
-  throw new Error('SUPABASE_URL and SUPABASE_SECRET_KEY are required.');
+  throw new Error('SUPABASE_URL and SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY are required.');
 }
 
 const supabase = createClient(url, serviceRoleKey, {
@@ -56,7 +56,11 @@ const displayName = (email) => email
   .replace(/[.-]/g, ' ')
   .replace(/\b\w/g, (character) => character.toUpperCase());
 
-const isAdmin = (email) => email === 'prince@frimpsoil.com.gh';
+const adminEmails = new Set([
+  'audit@frimpsoil.com.gh',
+  'prince@frimpsoil.com.gh',
+]);
+const isAdmin = (email) => adminEmails.has(email);
 const selectedEmail = process.env.SEED_USER_EMAIL?.toLowerCase();
 const targetEmails = selectedEmail
   ? emails.filter((email) => email === selectedEmail)

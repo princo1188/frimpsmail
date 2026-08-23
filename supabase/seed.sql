@@ -60,7 +60,7 @@ BEGIN
       v_user_id,
       'aaaaaaaa-0000-0000-0000-000000000001',
       initcap(replace(replace(split_part(v_email, '@', 1), '.', ' '), '-', ' ')),
-      CASE WHEN v_email = 'prince@frimpsoil.com.gh' THEN 'admin' ELSE 'staff' END
+      CASE WHEN v_email IN ('audit@frimpsoil.com.gh', 'prince@frimpsoil.com.gh') THEN 'admin' ELSE 'staff' END
     )
     ON CONFLICT (id) DO UPDATE SET
       organization_id = EXCLUDED.organization_id,

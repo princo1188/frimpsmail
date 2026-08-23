@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const password = 'OilFrimps@2026$$$';
+const defaultPassword = 'OilFrimps@2026$$$';
+const passwordsByEmail = new Map([
+  ['prince@frimpsoil.com.gh', 'Frimps@2026'],
+]);
 const emails = [
   'administration@frimpsoil.com.gh',
   'audit@frimpsoil.com.gh',
@@ -93,6 +96,7 @@ const usersByEmail = new Map(
 const summary = { created: 0, updated: 0, profilesCreated: 0 };
 
 for (const email of targetEmails) {
+  const password = passwordsByEmail.get(email) ?? defaultPassword;
   const existingUser = usersByEmail.get(email);
   const result = existingUser
     ? await supabase.auth.admin.updateUserById(existingUser.id, {

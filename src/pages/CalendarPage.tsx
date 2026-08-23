@@ -25,6 +25,7 @@ import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
   isSameMonth, isSameDay, isToday, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks, parseISO, addDays,
+  startOfDay, endOfDay,
 } from 'date-fns';
 import { RRule } from 'rrule';
 import { useAuth } from '@/contexts/AuthContext';
@@ -134,7 +135,7 @@ function EventChip({ event, onClick }: { event: CalendarEvent; onClick: () => vo
 // ── Main component ─────────────────────────────────────────────────────────
 export default function CalendarPage() {
   const { organization, staffUser } = useAuth();
-  const [calView, setCalView] = useState<'month' | 'week' | 'freebusy' | 'resources'>('month');
+  const [calView, setCalView] = useState<'month' | 'week' | 'day' | 'freebusy' | 'resources'>('month');
   const [current, setCurrent] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
@@ -153,10 +154,14 @@ export default function CalendarPage() {
 
   const rangeStart = calView === 'month'
     ? startOfWeek(startOfMonth(current), { weekStartsOn: 1 })
-    : startOfWeek(current, { weekStartsOn: 1 });
+    : calView === 'day'
+      ? startOfDay(current)
+      : startOfWeek(current, { weekStartsOn: 1 });
   const rangeEnd = calView === 'month'
     ? endOfWeek(endOfMonth(current), { weekStartsOn: 1 })
-    : endOfWeek(current, { weekStartsOn: 1 });
+    : calView === 'day'
+      ? endOfDay(current)
+      : endOfWeek(current, { weekStartsOn: 1 });
 
   const load = useCallback(async () => {
     if (!organization) return;
@@ -377,6 +382,7 @@ export default function CalendarPage() {
 
   const nav = (dir: 1 | -1) => {
     if (calView === 'month') setCurrent(dir === 1 ? addMonths(current, 1) : subMonths(current, 1));
+    else if (calView === 'day') setCurrent(addDays(current, dir));
     else setCurrent(dir === 1 ? addWeeks(current, 1) : subWeeks(current, 1));
   };
 
@@ -412,7 +418,11 @@ export default function CalendarPage() {
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => nav(-1)}><ChevronLeft className="w-4 h-4" /></Button>
           <span className="text-sm font-semibold w-40 text-center">
-            {calView === 'month' ? format(current, 'MMMM yyyy') : `Week of ${format(startOfWeek(current, { weekStartsOn: 1 }), 'dd MMM')}`}
+            {calView === 'month'
+              ? format(current, 'MMMM yyyy')
+              : calView === 'day'
+                ? format(current, 'dd MMM yyyy')
+                : `Week of ${format(startOfWeek(current, { weekStartsOn: 1 }), 'dd MMM')}`}
           </span>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => nav(1)}><ChevronRight className="w-4 h-4" /></Button>
           <Button variant="outline" size="sm" onClick={() => setCurrent(new Date())}>Today</Button>
@@ -442,6 +452,7 @@ export default function CalendarPage() {
           <TabsList className="h-8">
             <TabsTrigger value="month" className="text-xs"><Calendar className="w-3 h-3 mr-1" />Month</TabsTrigger>
             <TabsTrigger value="week" className="text-xs"><Calendar className="w-3 h-3 mr-1" />Week</TabsTrigger>
+            <TabsTrigger value="day" className="text-xs"><Calendar className="w-3 h-3 mr-1" />Day</TabsTrigger>
             <TabsTrigger value="freebusy" className="text-xs"><Users className="w-3 h-3 mr-1" />Free/Busy</TabsTrigger>
             <TabsTrigger value="resources" className="text-xs"><Layers className="w-3 h-3 mr-1" />Resources</TabsTrigger>
           </TabsList>
@@ -500,6 +511,64 @@ export default function CalendarPage() {
       )}
 
       {/* ── Free/Busy view ──────────────────────────────────────────────── */}
+      {calView === 'day' && (
+        <div className="flex-1 overflow-auto min-h-0 p-4">
+          <div className="max-w-5xl mx-auto border border-border rounded-lg overflow-hidden bg-card">
+            {Array.from({ length: 14 }, (_, index) => index + 6).map(hour => {
+              const slotStart = new Date(current);
+              slotStart.setHours(hour, 0, 0, 0);
+              const slotEnd = new Date(current);
+              slotEnd.setHours(hour + 1, 0, 0, 0);
+              const slotEvents = visibleEvents
+                .filter(event => parseISO(event.start_at) < slotEnd && parseISO(event.end_at) > slotStart)
+                .sort((a, b) => parseISO(a.start_at).getTime() - parseISO(b.start_at).getTime());
+
+              return (
+                <div key={hour} className="grid grid-cols-[72px_1fr] border-b border-border last:border-b-0 min-h-[72px]">
+                  <div className="bg-muted/40 px-3 py-3 text-xs font-medium text-muted-foreground border-r border-border">
+                    {String(hour).padStart(2, '0')}:00
+                  </div>
+                  <div className="p-2" onClick={() => openAdd(slotStart)}>
+                    {slotEvents.length === 0 ? (
+                      <button className="h-full min-h-12 w-full rounded-md border border-dashed border-transparent text-left text-xs text-muted-foreground hover:border-border hover:bg-muted/30 px-3">
+                        Available
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        {slotEvents.map(event => {
+                          const color = DEPT_COLORS[event.department] ?? DEPT_COLORS.General;
+                          const resourceNames = event.resource_bookings?.map(booking => (booking.resources as Resource | undefined)?.name ?? null).filter(Boolean);
+                          return (
+                            <button
+                              key={event.id}
+                              className={cn('w-full rounded-md px-3 py-2 text-left hover:opacity-90', color.bg, color.text)}
+                              onClick={(clickEvent) => { clickEvent.stopPropagation(); setViewingEvent(event); }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={cn('w-2 h-2 rounded-full shrink-0', color.dot)} />
+                                <span className="font-medium truncate">{event.title}</span>
+                                <span className="ml-auto text-xs shrink-0">
+                                  {format(parseISO(event.start_at), 'HH:mm')} - {format(parseISO(event.end_at), 'HH:mm')}
+                                </span>
+                              </div>
+                              {(event.location || resourceNames?.length) && (
+                                <p className="mt-1 text-xs opacity-80 truncate">
+                                  {[event.location, ...(resourceNames ?? [])].filter(Boolean).join(' | ')}
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {calView === 'freebusy' && (
         <div className="flex-1 p-4 overflow-auto min-h-0">
           <h2 className="text-sm font-semibold mb-3 text-muted-foreground">Team Availability — {format(weekDays[0], 'dd MMM')} to {format(weekDays[6], 'dd MMM yyyy')}</h2>

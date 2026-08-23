@@ -389,12 +389,14 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
               </button>
             </Link>
           )}
-          <button
-            onClick={() => { setSearchQuery('follow_up:true'); onFolderClick?.(); navigate('/inbox'); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-          >
-            <Clock className="w-4 h-4 shrink-0 text-orange-500" /> Follow-ups
-          </button>
+          <Link to="/inbox/follow-ups">
+            <button
+              onClick={() => { setSearchQuery(''); onFolderClick?.(); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            >
+              <Clock className="w-4 h-4 shrink-0 text-orange-500" /> Follow-ups
+            </button>
+          </Link>
         </div>
       </nav>
 

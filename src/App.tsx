@@ -19,6 +19,7 @@ import Verify2FAPage from '@/pages/Verify2FAPage';
 import AdminResourcesPage from '@/pages/AdminResourcesPage';
 import AdminSyncStatusPage from '@/pages/AdminSyncStatusPage';
 import ResourceSchedulePage from '@/pages/ResourceSchedulePage';
+import FollowUpsPage from '@/pages/FollowUpsPage';
 
 function AppRoutes() {
   useGlobalShortcuts();
@@ -34,6 +35,7 @@ function AppRoutes() {
       <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
       <Route path="/inbox/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
       <Route path="/inbox/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+      <Route path="/inbox/follow-ups" element={<ProtectedRoute><FollowUpsPage /></ProtectedRoute>} />
       <Route path="/inbox/resource-schedule" element={<ProtectedRoute><ResourceSchedulePage /></ProtectedRoute>} />
       <Route path="/inbox/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       {/* Admin (requires AAL2 + admin role) */}

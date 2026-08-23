@@ -317,12 +317,17 @@ export interface SavedSearch {
 
 export interface FollowUpReminder {
   id: string;
-  thread_id: string;
+  thread_id: string | null;
   staff_user_id: string;
+  title: string | null;
   remind_at: string;
+  due_at: string | null;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
   note: string | null;
   is_dismissed: boolean;
+  completed_at: string | null;
   created_at: string;
+  threads?: Pick<Thread, 'id' | 'subject' | 'participants' | 'last_message_at' | 'mailbox_id'> | null;
 }
 
 export interface WebhookEndpoint {

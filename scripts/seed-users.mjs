@@ -29,6 +29,7 @@ const emails = [
   'operations@frimpsoil.com.gh',
   'peter.nyamaah@frimpsoil.com.gh',
   'phinehas.pappoe@frimpsoil.com.gh',
+  'paakwesi@frimpsoil.com.gh',
   'prince@frimpsoil.com.gh',
   'raphael.teye@frimpsoil.com.gh',
   'samuel.agama@frimpsoil.com.gh',
@@ -61,6 +62,7 @@ const displayName = (email) => email
 
 const adminEmails = new Set([
   'audit@frimpsoil.com.gh',
+  'paakwesi@frimpsoil.com.gh',
   'prince@frimpsoil.com.gh',
 ]);
 const isAdmin = (email) => adminEmails.has(email);
@@ -82,6 +84,24 @@ const { data: organization, error: organizationError } = await supabase
 if (organizationError || !organization) {
   throw new Error(`Could not find the Frimps Oil organization: ${organizationError?.message ?? 'missing organization'}`);
 }
+
+const { error: contactNameCleanupError } = await supabase
+  .from('contacts')
+  .delete()
+  .in('name', ['Abena Frimpong', 'Akosua Boateng', 'David Asante']);
+if (contactNameCleanupError) throw new Error(`Could not clean demo contacts by name: ${contactNameCleanupError.message}`);
+
+const { error: contactEmailCleanupError } = await supabase
+  .from('contacts')
+  .delete()
+  .in('email', ['abena.frimpong@example.com', 'akosua.boateng@example.com', 'david.asante@example.com']);
+if (contactEmailCleanupError) throw new Error(`Could not clean demo contacts by email: ${contactEmailCleanupError.message}`);
+
+const { error: calendarCleanupError } = await supabase
+  .from('calendar_events')
+  .delete()
+  .in('title', ['Tanker GH-4421', 'GCB Bank signing', 'NPA Inspections']);
+if (calendarCleanupError) throw new Error(`Could not clean demo calendar events: ${calendarCleanupError.message}`);
 
 const { data: listedUsers, error: listError } = await supabase.auth.admin.listUsers({
   page: 1,

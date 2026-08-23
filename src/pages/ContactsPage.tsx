@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, Trash2, Search, UserPlus, Users, UserCheck, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, Search, UserPlus, Users, UserCheck, X, ChevronDown, ChevronRight, Eye, Mail, Phone, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMail } from '@/contexts/MailContext';
@@ -37,9 +38,11 @@ function ContactsTab() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
+  const [viewing, setViewing] = useState<Contact | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState<ContactForm>(EMPTY_CONTACT);
   const [saving, setSaving] = useState(false);
+  const [companyFilter, setCompanyFilter] = useState('all');
 
   const load = useCallback(async () => {
     if (!organization) return;
@@ -51,11 +54,17 @@ function ContactsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = contacts.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase()) ||
-    (c.company ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const companies = Array.from(new Set(contacts.map(c => c.company?.trim()).filter(Boolean) as string[])).sort();
+
+  const filtered = contacts.filter(c => {
+    const matchesSearch =
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.email.toLowerCase().includes(search.toLowerCase()) ||
+      (c.company ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone ?? '').toLowerCase().includes(search.toLowerCase());
+    const matchesCompany = companyFilter === 'all' || c.company === companyFilter;
+    return matchesSearch && matchesCompany;
+  });
 
   const openAdd = () => { setEditing(null); setForm(EMPTY_CONTACT); setDialogOpen(true); };
   const openEdit = (c: Contact) => {
@@ -96,12 +105,21 @@ function ContactsTab() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9" />
         </div>
-        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-2" /> Add Contact</Button>
+        <div className="flex gap-2">
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All companies</SelectItem>
+              {companies.map(company => <SelectItem key={company} value={company}>{company}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-2" /> Add Contact</Button>
+        </div>
       </div>
 
       <Card>
@@ -145,6 +163,7 @@ function ContactsTab() {
                     <TableCell className="whitespace-nowrap text-muted-foreground hidden md:table-cell">{c.phone ?? '—'}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewing(c)}><Eye className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                       </div>
@@ -179,6 +198,39 @@ function ContactsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {viewing && (
+        <Dialog open onOpenChange={open => !open && setViewing(null)}>
+          <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-md">
+            <DialogHeader><DialogTitle>{viewing.name}</DialogTitle></DialogHeader>
+            <div className="space-y-3 py-2 text-sm">
+              <div className="flex items-center gap-2 min-w-0">
+                <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                <a href={`mailto:${viewing.email}`} className="truncate text-primary hover:underline">{viewing.email}</a>
+              </div>
+              {viewing.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <a href={`tel:${viewing.phone}`} className="text-primary hover:underline">{viewing.phone}</a>
+                </div>
+              )}
+              {viewing.company && (
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span>{viewing.company}</span>
+                </div>
+              )}
+              {viewing.notes && (
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-muted-foreground whitespace-pre-wrap">{viewing.notes}</div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setViewing(null); openEdit(viewing); }}>Edit</Button>
+              <Button onClick={() => setViewing(null)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Delete Confirm */}
       <AlertDialog open={!!deleteId} onOpenChange={o => !o && setDeleteId(null)}>

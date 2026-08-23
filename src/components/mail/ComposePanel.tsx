@@ -60,11 +60,18 @@ function RecipientInput({
     setShowSuggestions(contacts.length > 0 || groups.length > 0);
   }, [organization, activeMailbox?.id]);
 
-  const addAddress = (address: string) => {
+  const addAddress = async (address: string) => {
     const trimmed = address.trim();
     if (!trimmed) return;
     if (trimmed.includes('@') && !value.includes(trimmed)) {
       onChange([...value, trimmed]);
+    } else if (organization) {
+      const groups = await fetchContactGroups(organization.id, activeMailbox?.id);
+      const group = groups.find(g => g.name.toLowerCase() === trimmed.toLowerCase());
+      if (group) {
+        await expandGroup(group);
+        return;
+      }
     }
     setInput('');
     setSuggestions([]);
@@ -107,12 +114,12 @@ function RecipientInput({
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
               e.preventDefault();
-              addAddress(input);
+              void addAddress(input);
             } else if (e.key === 'Backspace' && !input && value.length) {
               onChange(value.slice(0, -1));
             }
           }}
-          onBlur={() => { if (input) addAddress(input); setTimeout(() => setShowSuggestions(false), 150); }}
+          onBlur={() => { if (input) void addAddress(input); setTimeout(() => setShowSuggestions(false), 150); }}
           placeholder={value.length === 0 ? 'Type an email or group name…' : ''}
         />
       </div>
@@ -123,7 +130,7 @@ function RecipientInput({
             <button
               key={c.id}
               className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-baseline gap-2"
-              onMouseDown={() => addAddress(c.email)}
+              onMouseDown={() => void addAddress(c.email)}
             >
               <span className="font-medium">{c.name}</span>
               <span className="text-xs text-muted-foreground">{c.email}</span>

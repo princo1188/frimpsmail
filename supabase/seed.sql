@@ -20,7 +20,7 @@ BEGIN
     'marketing-distribution@frimpsoil.com.gh', 'mavis.frimpong@frimpsoil.com.gh',
     'miracle.lartey@frimpsoil.com.gh', 'operations@frimpsoil.com.gh',
     'peter.nyamaah@frimpsoil.com.gh', 'phinehas.pappoe@frimpsoil.com.gh',
-    'prince@frimpsoil.com.gh',
+    'paakwesi@frimpsoil.com.gh', 'prince@frimpsoil.com.gh',
     'raphael.teye@frimpsoil.com.gh', 'samuel.agama@frimpsoil.com.gh',
     'samuel.marlaidickson@frimpsoil.com.gh', 'sandra.omane@frimpsoil.com.gh',
     'siaw.appiahfrimpong@frimpsoil.com.gh', 'siddique.abubakariissaka@frimpsoil.com.gh',
@@ -60,7 +60,7 @@ BEGIN
       v_user_id,
       'aaaaaaaa-0000-0000-0000-000000000001',
       initcap(replace(replace(split_part(v_email, '@', 1), '.', ' '), '-', ' ')),
-      CASE WHEN v_email IN ('audit@frimpsoil.com.gh', 'prince@frimpsoil.com.gh') THEN 'admin' ELSE 'staff' END
+      CASE WHEN v_email IN ('audit@frimpsoil.com.gh', 'paakwesi@frimpsoil.com.gh', 'prince@frimpsoil.com.gh') THEN 'admin' ELSE 'staff' END
     )
     ON CONFLICT (id) DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
@@ -69,6 +69,17 @@ BEGIN
       role = CASE WHEN EXCLUDED.role = 'admin' THEN 'admin' ELSE public.staff_users.role END;
   END LOOP;
 END $$;
+
+DELETE FROM public.contacts
+WHERE name IN ('Abena Frimpong', 'Akosua Boateng', 'David Asante')
+   OR email IN (
+     'abena.frimpong@example.com',
+     'akosua.boateng@example.com',
+     'david.asante@example.com'
+   );
+
+DELETE FROM public.calendar_events
+WHERE title IN ('Tanker GH-4421', 'GCB Bank signing', 'NPA Inspections');
 
 -- Mailboxes for all reset-seeded staff users. Credentials are kept in Vault so
 -- the persistent sync service can connect without exposing webmail passwords.
@@ -92,7 +103,7 @@ BEGIN
     'marketing-distribution@frimpsoil.com.gh', 'mavis.frimpong@frimpsoil.com.gh',
     'miracle.lartey@frimpsoil.com.gh', 'operations@frimpsoil.com.gh',
     'peter.nyamaah@frimpsoil.com.gh', 'phinehas.pappoe@frimpsoil.com.gh',
-    'prince@frimpsoil.com.gh',
+    'paakwesi@frimpsoil.com.gh', 'prince@frimpsoil.com.gh',
     'raphael.teye@frimpsoil.com.gh', 'samuel.agama@frimpsoil.com.gh',
     'samuel.marlaidickson@frimpsoil.com.gh', 'sandra.omane@frimpsoil.com.gh',
     'siaw.appiahfrimpong@frimpsoil.com.gh', 'siddique.abubakariissaka@frimpsoil.com.gh',

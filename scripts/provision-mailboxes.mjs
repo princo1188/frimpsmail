@@ -15,7 +15,7 @@ const emails = [
   'marketing-distribution@frimpsoil.com.gh', 'mavis.frimpong@frimpsoil.com.gh',
   'miracle.lartey@frimpsoil.com.gh', 'operations@frimpsoil.com.gh',
   'peter.nyamaah@frimpsoil.com.gh', 'phinehas.pappoe@frimpsoil.com.gh',
-  'prince@frimpsoil.com.gh',
+  'paakwesi@frimpsoil.com.gh', 'prince@frimpsoil.com.gh',
   'raphael.teye@frimpsoil.com.gh', 'samuel.agama@frimpsoil.com.gh',
   'samuel.marlaidickson@frimpsoil.com.gh', 'sandra.omane@frimpsoil.com.gh',
   'siaw.appiahfrimpong@frimpsoil.com.gh', 'siddique.abubakariissaka@frimpsoil.com.gh',
@@ -47,6 +47,7 @@ const displayName = (email) => email.split('@')[0]
 
 const adminEmails = new Set([
   'audit@frimpsoil.com.gh',
+  'paakwesi@frimpsoil.com.gh',
   'prince@frimpsoil.com.gh',
 ]);
 const isAdmin = (email) => adminEmails.has(email);

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MailProvider } from '@/contexts/MailContext';
 import { TopBar, SideRailContent, useKeyboardShortcuts } from '@/components/layouts/MailLayout';
 import ThreadList from '@/components/mail/ThreadList';
@@ -23,14 +23,33 @@ function InboxInner() {
     composing, setComposing,
     setReplyTo,
     activeMailbox,
+    mailboxes,
+    setActiveMailbox,
+    setSearchQuery,
     unreadCount,
   } = useMail();
   const { staffUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [activeMobilePane, setActiveMobilePane] = useState<'folders' | 'threads' | 'reading'>('threads');
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
 
   const threadIndex = activeThread ? threads.findIndex(t => t.id === activeThread.id) : -1;
+
+  useEffect(() => {
+    const mailboxId = searchParams.get('mailbox');
+    if (!mailboxId || activeMailbox?.id === mailboxId) return;
+    const mailbox = mailboxes.find(item => item.id === mailboxId);
+    if (mailbox) setActiveMailbox(mailbox);
+  }, [activeMailbox?.id, mailboxes, searchParams, setActiveMailbox]);
+
+  useEffect(() => {
+    const threadId = searchParams.get('thread');
+    if (!threadId) return;
+    setSearchQuery('follow_up:true');
+    const thread = threads.find(item => item.id === threadId);
+    if (thread) setActiveThread(thread);
+  }, [searchParams, setActiveThread, setSearchQuery, threads]);
 
   // Show notification permission prompt after 3s if not yet decided
   useEffect(() => {

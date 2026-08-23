@@ -507,12 +507,12 @@ export async function deleteSavedSearch(id: string) {
 // ============================================================
 // FOLLOW-UP REMINDERS
 // ============================================================
-export async function setFollowUp(threadId: string, staffUserId: string, remindAt: Date, note?: string) {
+export async function setFollowUp(threadId: string, staffUserId: string, remindAt: Date, note?: string, priority: FollowUpReminder['priority'] = 'normal') {
   const { error: threadError } = await supabase.from('threads')
     .update({ follow_up_at: remindAt.toISOString(), follow_up_note: note ?? null }).eq('id', threadId);
   if (threadError) throw threadError;
   const { error } = await supabase.from('follow_up_reminders').upsert(
-    { thread_id: threadId, staff_user_id: staffUserId, remind_at: remindAt.toISOString(), note: note ?? null, is_dismissed: false },
+    { thread_id: threadId, staff_user_id: staffUserId, remind_at: remindAt.toISOString(), due_at: remindAt.toISOString(), priority, note: note ?? null, is_dismissed: false, completed_at: null },
     { onConflict: 'thread_id,staff_user_id' }
   );
   if (error) throw error;
@@ -530,13 +530,42 @@ export async function dismissFollowUp(threadId: string, staffUserId: string) {
 export async function fetchPendingFollowUps(staffUserId: string): Promise<FollowUpReminder[]> {
   const { data, error } = await supabase
     .from('follow_up_reminders')
-    .select('*')
+    .select('*, threads(id,subject,participants,last_message_at,mailbox_id)')
     .eq('staff_user_id', staffUserId)
     .eq('is_dismissed', false)
-    .lte('remind_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
-    .order('remind_at');
+    .is('completed_at', null)
+    .order('due_at', { ascending: true, nullsFirst: false })
+    .order('remind_at', { ascending: true });
   if (error) throw error;
   return (Array.isArray(data) ? data : []) as FollowUpReminder[];
+}
+
+export async function createFollowUpTask(task: {
+  staff_user_id: string;
+  title: string;
+  note?: string | null;
+  remind_at: string;
+  due_at?: string | null;
+  priority: FollowUpReminder['priority'];
+}) {
+  const { data, error } = await supabase.from('follow_up_reminders').insert({
+    thread_id: null,
+    staff_user_id: task.staff_user_id,
+    title: task.title,
+    note: task.note ?? null,
+    remind_at: task.remind_at,
+    due_at: task.due_at ?? task.remind_at,
+    priority: task.priority,
+    is_dismissed: false,
+    completed_at: null,
+  }).select().single();
+  if (error) throw error;
+  return data as FollowUpReminder;
+}
+
+export async function updateFollowUp(id: string, updates: Partial<Pick<FollowUpReminder, 'title' | 'note' | 'remind_at' | 'due_at' | 'priority' | 'is_dismissed' | 'completed_at'>>) {
+  const { error } = await supabase.from('follow_up_reminders').update(updates).eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================

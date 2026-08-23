@@ -16,12 +16,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useMail } from '@/contexts/MailContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateSpamFlag, fetchAiCache, upsertAiCache, setFollowUp, dismissFollowUp } from '@/services/api';
 import { supabase } from '@/db/supabase';
-import type { Message, Attachment } from '@/types/types';
+import type { Message, Attachment, FollowUpReminder } from '@/types/types';
 import { cn } from '@/lib/utils';
 import ComposePanel from './ComposePanel';
 import SnoozePopover from './SnoozePopover';
@@ -315,6 +316,7 @@ function FollowUpPopover({ threadId }: { threadId: string }) {
   const { staffUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
+  const [priority, setPriority] = useState<FollowUpReminder['priority']>('normal');
   const [custom, setCustom] = useState(false);
   const [customDate, setCustomDate] = useState('');
 
@@ -327,7 +329,7 @@ function FollowUpPopover({ threadId }: { threadId: string }) {
 
   const set = async (date: Date) => {
     if (!staffUser) return;
-    await setFollowUp(threadId, staffUser.id, date, note || undefined);
+    await setFollowUp(threadId, staffUser.id, date, note || undefined, priority);
     toast.success(`Follow-up set for ${format(date, 'dd MMM, HH:mm')}`);
     setOpen(false);
     setNote('');
@@ -376,6 +378,18 @@ function FollowUpPopover({ threadId }: { threadId: string }) {
         <div className="border-t border-border pt-2">
           <Label className="text-xs text-muted-foreground">Note (optional)</Label>
           <Input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Check on quote status" className="h-7 text-xs mt-1" />
+        </div>
+        <div className="pt-2">
+          <Label className="text-xs text-muted-foreground">Priority</Label>
+          <Select value={priority} onValueChange={v => setPriority(v as FollowUpReminder['priority'])}>
+            <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="normal">Normal</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="urgent">Urgent</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="pt-2 border-t border-border mt-2">
           <button onClick={dismiss} className="text-xs text-destructive hover:underline">Clear follow-up</button>

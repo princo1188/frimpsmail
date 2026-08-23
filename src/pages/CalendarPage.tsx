@@ -567,9 +567,11 @@ export default function CalendarPage() {
             <div className="text-center py-16 text-muted-foreground">
               <Layers className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p>No active resources yet.</p>
-              <Link to="/admin/resources">
-                <Button size="sm" className="mt-3">Manage Resources</Button>
-              </Link>
+              {staffUser?.role === 'admin' && (
+                <Link to="/admin/resources">
+                  <Button size="sm" className="mt-3">Manage Resources</Button>
+                </Link>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">

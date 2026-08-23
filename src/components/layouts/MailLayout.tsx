@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Inbox, Send, FileText, Trash2, AlertTriangle, Archive,
   Search, Settings, ChevronDown, LogOut, User, Shield,
-  Mail, RefreshCw, Video, BookmarkPlus, Bookmark, Clock,
+  Mail, RefreshCw, BookmarkPlus, Bookmark, Clock,
   LayoutDashboard, Keyboard, Sun, Moon, Monitor, Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,18 @@ const FOLDERS: FolderItem[] = [
   { type: 'trash', label: 'Trash', icon: Trash2 },
 ];
 
+const savedSearchQuery = (savedSearch: SavedSearch) => {
+  const query = savedSearch.query.trim();
+  if (!query.startsWith('{')) return query;
+
+  try {
+    const parsed = JSON.parse(query) as { q?: unknown };
+    return typeof parsed.q === 'string' ? parsed.q : query;
+  } catch {
+    return query;
+  }
+};
+
 interface TopBarProps {
   onCompose: () => void;
 }
@@ -55,7 +67,12 @@ export function TopBar({ onCompose }: TopBarProps) {
 
   useEffect(() => {
     if (staffUser) {
-      fetchSavedSearches(staffUser.id).then(setSavedSearches);
+      fetchSavedSearches(staffUser.id)
+        .then(setSavedSearches)
+        .catch((error) => {
+          console.error('Failed to load saved searches', error);
+          toast.error('Failed to load saved searches');
+        });
     }
   }, [staffUser]);
 
@@ -63,9 +80,14 @@ export function TopBar({ onCompose }: TopBarProps) {
     if (!searchQuery.trim() || !staffUser) return;
     const name = window.prompt('Save search as:', searchQuery);
     if (!name) return;
-    await createSavedSearch({ staff_user_id: staffUser.id, name, query: searchQuery, icon: 'search' });
-    fetchSavedSearches(staffUser.id).then(setSavedSearches);
-    toast.success(`Search "${name}" saved`);
+    try {
+      await createSavedSearch({ staff_user_id: staffUser.id, name, query: searchQuery, icon: 'search' });
+      setSavedSearches(await fetchSavedSearches(staffUser.id));
+      toast.success(`Search "${name}" saved`);
+    } catch (error) {
+      console.error('Failed to save search', error);
+      toast.error('Failed to save search');
+    }
   };
 
   // ? key opens shortcuts overlay
@@ -122,7 +144,7 @@ export function TopBar({ onCompose }: TopBarProps) {
           />
           {searchQuery && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {savedSearches.some(s => (s.query as { q?: string }).q === searchQuery) ? null : (
+              {savedSearches.some(s => savedSearchQuery(s) === searchQuery) ? null : (
                 <button onClick={handleSaveSearch} title="Save this search" className="p-1 rounded hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground transition-colors">
                   <BookmarkPlus className="w-3.5 h-3.5" />
                 </button>
@@ -136,11 +158,21 @@ export function TopBar({ onCompose }: TopBarProps) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
                     {savedSearches.map(s => (
-                      <DropdownMenuItem key={s.id} onClick={() => { setSearchQuery((s.query as { q?: string }).q ?? ''); refreshThreads(); }}>
+                      <DropdownMenuItem key={s.id} onClick={() => { setSearchQuery(savedSearchQuery(s)); }}>
                         <Search className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
                         <span className="flex-1 truncate">{s.name}</span>
                         <button
-                          onClick={async e => { e.stopPropagation(); await deleteSavedSearch(s.id); fetchSavedSearches(staffUser!.id).then(setSavedSearches); toast.success('Saved search removed'); }}
+                          onClick={async e => {
+                            e.stopPropagation();
+                            try {
+                              await deleteSavedSearch(s.id);
+                              setSavedSearches(await fetchSavedSearches(staffUser!.id));
+                              toast.success('Saved search removed');
+                            } catch (error) {
+                              console.error('Failed to remove saved search', error);
+                              toast.error('Failed to remove saved search');
+                            }
+                          }}
                           className="ml-1 text-muted-foreground hover:text-destructive"
                         >
                           ×
@@ -219,14 +251,21 @@ interface SideRailContentProps {
 }
 
 export function SideRailContent({ onCompose, onFolderClick }: SideRailContentProps) {
-  const { activeFolder, setActiveFolder, setActiveThread, mailboxes, activeMailbox, setActiveMailbox, unreadCount, setSearchQuery, refreshThreads } = useMail();
+  const { activeFolder, setActiveFolder, setActiveThread, mailboxes, activeMailbox, setActiveMailbox, unreadCount, setSearchQuery } = useMail();
   const { staffUser } = useAuth();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const navigate = useNavigate();
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
 
   useEffect(() => {
-    if (staffUser) fetchSavedSearches(staffUser.id).then(setSavedSearches);
+    if (staffUser) {
+      fetchSavedSearches(staffUser.id)
+        .then(setSavedSearches)
+        .catch((error) => {
+          console.error('Failed to load saved searches', error);
+          toast.error('Failed to load saved searches');
+        });
+    }
   }, [staffUser]);
 
   const handleFolder = (f: FolderType) => {
@@ -238,8 +277,7 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
   };
 
   const handleSavedSearch = (s: SavedSearch) => {
-    setSearchQuery((s.query as { q?: string }).q ?? '');
-    refreshThreads();
+    setSearchQuery(savedSearchQuery(s));
     onFolderClick?.();
     navigate('/inbox');
   };
@@ -352,13 +390,7 @@ export function SideRailContent({ onCompose, onFolderClick }: SideRailContentPro
             </Link>
           )}
           <button
-            onClick={() => {/* video call placeholder */}}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-          >
-            <Video className="w-4 h-4 shrink-0" /> Video Calls <span className="ml-auto text-xs text-muted-foreground">Soon</span>
-          </button>
-          <button
-            onClick={() => { setSearchQuery('follow_up:true'); refreshThreads(); onFolderClick?.(); }}
+            onClick={() => { setSearchQuery('follow_up:true'); onFolderClick?.(); navigate('/inbox'); }}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
           >
             <Clock className="w-4 h-4 shrink-0 text-orange-500" /> Follow-ups

@@ -6,6 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const jsonResponse = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -21,66 +26,64 @@ serve(async (req) => {
     // Verify caller is authenticated admin
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Missing authorization header' }, 401);
     }
     const { data: { user: callerUser }, error: callerErr } = await supabaseAdmin.auth.getUser(
       authHeader.replace('Bearer ', '')
     );
     if (callerErr || !callerUser) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
     // Check caller is admin
-    const { data: callerStaff } = await supabaseAdmin
+    const { data: callerStaff, error: callerStaffError } = await supabaseAdmin
       .from('staff_users')
-      .select('role')
+      .select('role, organization_id')
       .eq('id', callerUser.id)
       .maybeSingle();
+    if (callerStaffError) throw new Error(`Could not verify caller: ${callerStaffError.message}`);
     if (callerStaff?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Admin access required' }, 403);
     }
 
     const { staff_user_id } = await req.json() as { staff_user_id: string };
     if (!staff_user_id) {
-      return new Response(JSON.stringify({ error: 'staff_user_id is required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'staff_user_id is required' }, 400);
     }
 
     // Get the target user's auth ID and organization (staff_users.id = auth.users.id)
-    const { data: targetStaff } = await supabaseAdmin
+    const { data: targetStaff, error: targetStaffError } = await supabaseAdmin
       .from('staff_users')
       .select('id, organization_id')
       .eq('id', staff_user_id)
       .maybeSingle();
+    if (targetStaffError) throw new Error(`Could not find staff user: ${targetStaffError.message}`);
     if (!targetStaff) {
-      return new Response(JSON.stringify({ error: 'Staff user not found' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Staff user not found' }, 404);
+    }
+    if (targetStaff.organization_id !== callerStaff.organization_id) {
+      return jsonResponse({ error: 'Organization access denied' }, 403);
     }
 
     // List and delete all TOTP factors for the target user
-    const { data: factors } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: staff_user_id });
+    const { data: factors, error: factorsError } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: staff_user_id });
+    if (factorsError) throw new Error(`Could not list MFA factors: ${factorsError.message}`);
     if (factors?.factors?.length) {
       for (const factor of factors.factors) {
-        await supabaseAdmin.auth.admin.mfa.deleteFactor({ userId: staff_user_id, id: factor.id });
+        const { error: deleteFactorError } = await supabaseAdmin.auth.admin.mfa.deleteFactor({ userId: staff_user_id, id: factor.id });
+        if (deleteFactorError) throw new Error(`Could not delete MFA factor: ${deleteFactorError.message}`);
       }
     }
 
     // Update staff_users record
-    await supabaseAdmin.from('staff_users').update({
+    const { error: updateError } = await supabaseAdmin.from('staff_users').update({
       mfa_enrolled: false,
       mfa_enrolled_at: null,
     }).eq('id', staff_user_id);
+    if (updateError) throw new Error(`Could not update staff MFA status: ${updateError.message}`);
 
     const forwarded = req.headers.get('x-forwarded-for');
-    await supabaseAdmin.from('security_audit_log').insert({
+    const { error: auditError } = await supabaseAdmin.from('security_audit_log').insert({
       organization_id: targetStaff?.organization_id ?? null,
       staff_user_id: callerUser.id,
       event_type: 'mfa_admin_reset',
@@ -88,13 +91,10 @@ serve(async (req) => {
       ip_address: forwarded ? forwarded.split(',')[0].trim() : undefined,
       user_agent: req.headers.get('user-agent') ?? null,
     });
+    if (auditError) throw new Error(`Could not write audit log: ${auditError.message}`);
 
-    return new Response(JSON.stringify({ success: true, message: 'MFA reset successfully' }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ success: true, message: 'MFA reset successfully' });
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: (err as Error).message }, 500);
   }
 });

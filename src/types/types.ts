@@ -308,6 +308,7 @@ export interface SavedSearch {
   id: string;
   staff_user_id: string;
   name: string;
+  /** Plain search text, not a serialized filter object. */
   query: string;
   filters?: Record<string, unknown>;
   icon?: string;

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import { supabase } from '@/db/supabase';
 import type { Mailbox, Thread, Message, MailboxFolder, FolderType } from '@/types/types';
 import { useAuth } from './AuthContext';
+import { toast } from 'sonner';
 
 interface MailContextType {
   mailboxes: Mailbox[];
@@ -34,6 +35,11 @@ interface MailContextType {
 
 const MailContext = createContext<MailContextType | null>(null);
 
+const reportMailError = (message: string, error: unknown) => {
+  console.error(message, error);
+  toast.error(message);
+};
+
 export function MailProvider({ children }: { children: ReactNode }) {
   const { staffUser } = useAuth();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
@@ -53,26 +59,40 @@ export function MailProvider({ children }: { children: ReactNode }) {
   // Load mailboxes
   useEffect(() => {
     if (!staffUser) return;
-    supabase
-      .from('mailboxes')
-      .select('*, staff_users(full_name)')
-      .order('created_at', { ascending: true })
-      .then(({ data }) => {
+    const loadMailboxes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('mailboxes')
+          .select('*, staff_users(full_name)')
+          .order('created_at', { ascending: true });
+        if (error) throw error;
         if (data?.length) {
           setMailboxes(data as Mailbox[]);
           setActiveMailbox(data[0] as Mailbox);
         }
-      });
+      } catch (error) {
+        reportMailError('Failed to load mailboxes', error);
+      }
+    };
+    void loadMailboxes();
   }, [staffUser]);
 
   // Load folders when mailbox changes
   useEffect(() => {
     if (!activeMailbox) return;
-    supabase
-      .from('mailbox_folders')
-      .select('*')
-      .eq('mailbox_id', activeMailbox.id)
-      .then(({ data }) => { if (data) setFolders(data as MailboxFolder[]); });
+    const loadFolders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('mailbox_folders')
+          .select('*')
+          .eq('mailbox_id', activeMailbox.id);
+        if (error) throw error;
+        if (data) setFolders(data as MailboxFolder[]);
+      } catch (error) {
+        reportMailError('Failed to load mailbox folders', error);
+      }
+    };
+    void loadFolders();
   }, [activeMailbox]);
 
   const getFolderFilter = useCallback((folder: FolderType, foldersList: MailboxFolder[]) => {
@@ -92,7 +112,9 @@ export function MailProvider({ children }: { children: ReactNode }) {
         .order('last_message_at', { ascending: false })
         .limit(50);
 
-      if (searchQuery) {
+      if (searchQuery.trim() === 'follow_up:true') {
+        q = q.not('follow_up_at', 'is', null);
+      } else if (searchQuery) {
         // basic FTS fallback in threads
         q = q.ilike('subject', `%${searchQuery}%`);
       } else {
@@ -101,7 +123,8 @@ export function MailProvider({ children }: { children: ReactNode }) {
         else q = q.is('folder_id', null); // inbox = no folder assigned OR inbox folder
       }
 
-      const { data } = await q;
+      const { data, error } = await q;
+      if (error) throw error;
       if (data) {
         setThreads(data as Thread[]);
       }
@@ -112,8 +135,11 @@ export function MailProvider({ children }: { children: ReactNode }) {
       let unreadQuery = supabase.from('threads').select('*', { count: 'exact', head: true })
         .eq('mailbox_id', activeMailbox.id).eq('is_read', false);
       unreadQuery = inboxFolder ? unreadQuery.eq('folder_id', inboxFolder.folder_id) : unreadQuery.is('folder_id', null);
-      const { count } = await unreadQuery;
+      const { count, error: unreadError } = await unreadQuery;
+      if (unreadError) throw unreadError;
       setUnreadCount(count ?? 0);
+    } catch (error) {
+      reportMailError('Failed to load threads', error);
     } finally {
       setLoadingThreads(false);
     }
@@ -133,8 +159,16 @@ export function MailProvider({ children }: { children: ReactNode }) {
         () => { loadThreads(); if (activeThread) loadMessages(activeThread.id); }
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mailbox_folders', filter: `mailbox_id=eq.${activeMailbox.id}` }, () => {
-        supabase.from('mailbox_folders').select('*').eq('mailbox_id', activeMailbox.id)
-          .then(({ data }) => { if (data) setFolders(data as MailboxFolder[]); });
+        const refreshFolders = async () => {
+          try {
+            const { data, error } = await supabase.from('mailbox_folders').select('*').eq('mailbox_id', activeMailbox.id);
+            if (error) throw error;
+            if (data) setFolders(data as MailboxFolder[]);
+          } catch (error) {
+            reportMailError('Failed to refresh mailbox folders', error);
+          }
+        };
+        void refreshFolders();
       })
       .subscribe();
     return () => { channel.unsubscribe(); };
@@ -151,13 +185,16 @@ export function MailProvider({ children }: { children: ReactNode }) {
   const loadMessages = async (threadId: string) => {
     setLoadingMessages(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('messages')
         .select('*, attachments(*), spam_flags(*)')
         .eq('thread_id', threadId)
         .order('sent_at', { ascending: true })
         .limit(100);
+      if (error) throw error;
       if (data) setActiveMessages(data as Message[]);
+    } catch (error) {
+      reportMailError('Failed to load messages', error);
     } finally {
       setLoadingMessages(false);
     }
@@ -171,40 +208,78 @@ export function MailProvider({ children }: { children: ReactNode }) {
   // Actions (optimistic)
   const markThreadRead = useCallback(async (threadId: string) => {
     setThreads(prev => prev.map(t => t.id === threadId ? { ...t, is_read: true } : t));
-    await supabase.from('threads').update({ is_read: true }).eq('id', threadId);
-    await supabase.from('messages').update({ is_read: true }).eq('thread_id', threadId);
-  }, []);
+    try {
+      const { error: threadError } = await supabase.from('threads').update({ is_read: true }).eq('id', threadId);
+      if (threadError) throw threadError;
+      const { error: messageError } = await supabase.from('messages').update({ is_read: true }).eq('thread_id', threadId);
+      if (messageError) throw messageError;
+    } catch (error) {
+      reportMailError('Failed to mark thread as read', error);
+      void loadThreads();
+    }
+  }, [loadThreads]);
 
   const starThread = useCallback(async (threadId: string, starred: boolean) => {
     setThreads(prev => prev.map(t => t.id === threadId ? { ...t, is_starred: starred } : t));
-    await supabase.from('threads').update({ is_starred: starred }).eq('id', threadId);
-  }, []);
+    try {
+      const { error } = await supabase.from('threads').update({ is_starred: starred }).eq('id', threadId);
+      if (error) throw error;
+    } catch (error) {
+      reportMailError('Failed to update star', error);
+      void loadThreads();
+    }
+  }, [loadThreads]);
 
   const archiveThread = useCallback(async (threadId: string) => {
     const archiveFolder = folders.find(f => f.normalized_type === 'archive');
     setThreads(prev => prev.filter(t => t.id !== threadId));
-    await supabase.from('threads').update({ folder_id: archiveFolder?.id ?? null }).eq('id', threadId);
-  }, [folders]);
+    try {
+      const { error } = await supabase.from('threads').update({ folder_id: archiveFolder?.id ?? null }).eq('id', threadId);
+      if (error) throw error;
+    } catch (error) {
+      reportMailError('Failed to archive thread', error);
+      void loadThreads();
+    }
+  }, [folders, loadThreads]);
 
   const deleteThread = useCallback(async (threadId: string) => {
     const trashFolder = folders.find(f => f.normalized_type === 'trash');
     setThreads(prev => prev.filter(t => t.id !== threadId));
-    await supabase.from('threads').update({ folder_id: trashFolder?.id ?? null }).eq('id', threadId);
-  }, [folders]);
+    try {
+      const { error } = await supabase.from('threads').update({ folder_id: trashFolder?.id ?? null }).eq('id', threadId);
+      if (error) throw error;
+    } catch (error) {
+      reportMailError('Failed to move thread to trash', error);
+      void loadThreads();
+    }
+  }, [folders, loadThreads]);
 
   const snoozeThread = useCallback(async (threadId: string, until: Date) => {
     setThreads(prev => prev.filter(t => t.id !== threadId));
-    await supabase.from('threads').update({ snoozed_until: until.toISOString() }).eq('id', threadId);
-  }, []);
+    try {
+      const { error } = await supabase.from('threads').update({ snoozed_until: until.toISOString() }).eq('id', threadId);
+      if (error) throw error;
+    } catch (error) {
+      reportMailError('Failed to snooze thread', error);
+      void loadThreads();
+    }
+  }, [loadThreads]);
 
   const moveToSpam = useCallback(async (threadId: string) => {
     const spamFolder = folders.find(f => f.normalized_type === 'spam');
     setThreads(prev => prev.filter(t => t.id !== threadId));
-    await supabase.from('threads').update({ folder_id: spamFolder?.id ?? null }).eq('id', threadId);
-    await supabase.from('messages')
-      .update({ spam_status: 'confirmed_spam' })
-      .eq('thread_id', threadId);
-  }, [folders]);
+    try {
+      const { error: threadError } = await supabase.from('threads').update({ folder_id: spamFolder?.id ?? null }).eq('id', threadId);
+      if (threadError) throw threadError;
+      const { error: messageError } = await supabase.from('messages')
+        .update({ spam_status: 'confirmed_spam' })
+        .eq('thread_id', threadId);
+      if (messageError) throw messageError;
+    } catch (error) {
+      reportMailError('Failed to move thread to spam', error);
+      void loadThreads();
+    }
+  }, [folders, loadThreads]);
 
   return (
     <MailContext.Provider value={{

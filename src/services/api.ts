@@ -36,13 +36,14 @@ export async function searchThreads(mailboxId: string, filters: SearchFilters) {
     .limit(50);
   if (error) {
     // FTS fallback — ilike
-    const { data: fallback } = await supabase
+    const { data: fallback, error: fallbackError } = await supabase
       .from('messages')
       .select('thread_id, subject, from_address, sent_at')
       .eq('mailbox_id', mailboxId)
       .or(`subject.ilike.%${filters.query}%,from_address.ilike.%${filters.query}%,body_text.ilike.%${filters.query}%`)
       .order('sent_at', { ascending: false })
       .limit(50);
+    if (fallbackError) throw fallbackError;
     return Array.isArray(fallback) ? fallback : [];
   }
   return Array.isArray(data) ? data : [];
@@ -68,7 +69,8 @@ export async function fetchMessages(threadId: string): Promise<Message[]> {
 }
 
 export async function markMessageRead(messageId: string) {
-  await supabase.from('messages').update({ is_read: true }).eq('id', messageId);
+  const { error } = await supabase.from('messages').update({ is_read: true }).eq('id', messageId);
+  if (error) throw error;
 }
 
 export interface LocalDraftInput {
@@ -150,20 +152,22 @@ export async function updateSpamFlag(flagId: string, action: 'confirmed' | 'dism
 // AI CACHE
 // ============================================================
 export async function fetchAiCache(threadId: string, type: 'summary' | 'draft_suggestion') {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('ai_cache')
     .select('*')
     .eq('thread_id', threadId)
     .eq('type', type)
     .maybeSingle();
+  if (error) throw error;
   return data;
 }
 
 export async function upsertAiCache(threadId: string, type: 'summary', content: string) {
-  await supabase
+  const { error } = await supabase
     .from('ai_cache')
     .upsert({ thread_id: threadId, type, content, generated_at: new Date().toISOString() },
       { onConflict: 'thread_id,type' });
+  if (error) throw error;
 }
 
 // ============================================================
@@ -196,13 +200,14 @@ export async function deleteContact(id: string) {
 }
 
 export async function searchContacts(orgId: string, query: string): Promise<Contact[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('contacts')
     .select('id, name, email, company')
     .eq('organization_id', orgId)
     .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
     .order('name')
     .limit(20);
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as Contact[];
 }
 
@@ -210,48 +215,56 @@ export async function searchContacts(orgId: string, query: string): Promise<Cont
 // SIGNATURES
 // ============================================================
 export async function fetchSignatures(mailboxId: string): Promise<Signature[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('signatures')
     .select('*')
     .eq('mailbox_id', mailboxId)
     .order('is_default', { ascending: false });
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as Signature[];
 }
 
 export async function upsertSignature(sig: Omit<Signature, 'id' | 'created_at'> & { id?: string }) {
   if (sig.id) {
-    await supabase.from('signatures').update(sig).eq('id', sig.id);
+    const { error } = await supabase.from('signatures').update(sig).eq('id', sig.id);
+    if (error) throw error;
   } else {
-    await supabase.from('signatures').insert(sig);
+    const { error } = await supabase.from('signatures').insert(sig);
+    if (error) throw error;
   }
 }
 
 export async function deleteSignature(id: string) {
-  await supabase.from('signatures').delete().eq('id', id);
+  const { error } = await supabase.from('signatures').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
 // RULES
 // ============================================================
 export async function fetchRules(mailboxId: string): Promise<Rule[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('rules')
     .select('*')
     .eq('mailbox_id', mailboxId)
     .order('created_at');
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as Rule[];
 }
 
 export async function upsertRule(rule: Omit<Rule, 'id' | 'created_at'> & { id?: string }) {
   if (rule.id) {
-    await supabase.from('rules').update(rule).eq('id', rule.id);
+    const { error } = await supabase.from('rules').update(rule).eq('id', rule.id);
+    if (error) throw error;
   } else {
-    await supabase.from('rules').insert(rule);
+    const { error } = await supabase.from('rules').insert(rule);
+    if (error) throw error;
   }
 }
 
 export async function deleteRule(id: string) {
-  await supabase.from('rules').delete().eq('id', id);
+  const { error } = await supabase.from('rules').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
@@ -316,8 +329,10 @@ export async function uploadCalendarAttachment(eventId: string, file: File): Pro
 }
 
 export async function deleteCalendarAttachment(id: string, storagePath: string) {
-  await supabase.storage.from('attachments').remove([storagePath]);
-  await supabase.from('calendar_event_attachments').delete().eq('id', id);
+  const { error: storageError } = await supabase.storage.from('attachments').remove([storagePath]);
+  if (storageError) throw storageError;
+  const { error } = await supabase.from('calendar_event_attachments').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
@@ -362,26 +377,29 @@ export async function createResourceBooking(booking: Omit<ResourceBooking, 'id' 
 }
 
 export async function deleteResourceBooking(calendarEventId: string) {
-  await supabase.from('resource_bookings').delete().eq('calendar_event_id', calendarEventId);
+  const { error } = await supabase.from('resource_bookings').delete().eq('calendar_event_id', calendarEventId);
+  if (error) throw error;
 }
 
 // ============================================================
 // FEATURE INTEREST
 // ============================================================
 export async function logFeatureInterest(staffUserId: string, feature: string) {
-  await supabase.from('feature_interest').insert({ staff_user_id: staffUserId, feature });
+  const { error } = await supabase.from('feature_interest').insert({ staff_user_id: staffUserId, feature });
+  if (error) throw error;
 }
 
 // ============================================================
 // EMAIL TEMPLATES
 // ============================================================
 export async function fetchEmailTemplates(orgId: string): Promise<EmailTemplate[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('email_templates')
     .select('*')
     .eq('organization_id', orgId)
     .order('category')
     .order('name');
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as EmailTemplate[];
 }
 
@@ -396,7 +414,8 @@ export async function upsertEmailTemplate(tmpl: Omit<EmailTemplate, 'id' | 'crea
 }
 
 export async function deleteEmailTemplate(id: string) {
-  await supabase.from('email_templates').delete().eq('id', id);
+  const { error } = await supabase.from('email_templates').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
@@ -415,7 +434,8 @@ export async function fetchContactGroups(orgId: string, mailboxId?: string): Pro
     query = query.or(`mailbox_id.eq.${mailboxId},mailbox_id.is.null`);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as ContactGroup[];
 }
 
@@ -426,28 +446,33 @@ export async function createContactGroup(group: Omit<ContactGroup, 'id' | 'creat
 }
 
 export async function updateContactGroup(id: string, updates: Partial<Pick<ContactGroup, 'name' | 'description'>>) {
-  await supabase.from('contact_groups').update(updates).eq('id', id);
+  const { error } = await supabase.from('contact_groups').update(updates).eq('id', id);
+  if (error) throw error;
 }
 
 export async function deleteContactGroup(id: string) {
-  await supabase.from('contact_groups').delete().eq('id', id);
+  const { error } = await supabase.from('contact_groups').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function fetchGroupMembers(groupId: string): Promise<Contact[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('contact_group_members')
     .select('contacts(*)')
     .eq('group_id', groupId);
+  if (error) throw error;
   const contacts = (data ?? []).map((row: Record<string, unknown>) => row.contacts as Contact).filter(Boolean);
   return contacts;
 }
 
 export async function addGroupMember(groupId: string, contactId: string) {
-  await supabase.from('contact_group_members').upsert({ group_id: groupId, contact_id: contactId });
+  const { error } = await supabase.from('contact_group_members').upsert({ group_id: groupId, contact_id: contactId });
+  if (error) throw error;
 }
 
 export async function removeGroupMember(groupId: string, contactId: string) {
-  await supabase.from('contact_group_members').delete().eq('group_id', groupId).eq('contact_id', contactId);
+  const { error } = await supabase.from('contact_group_members').delete().eq('group_id', groupId).eq('contact_id', contactId);
+  if (error) throw error;
 }
 
 /** Expand a group into its member email addresses (for compose To/CC) */
@@ -460,11 +485,12 @@ export async function expandGroupToEmails(groupId: string): Promise<string[]> {
 // SAVED SEARCHES
 // ============================================================
 export async function fetchSavedSearches(staffUserId: string): Promise<SavedSearch[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('saved_searches')
     .select('*')
     .eq('staff_user_id', staffUserId)
     .order('created_at');
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as SavedSearch[];
 }
 
@@ -474,7 +500,8 @@ export async function createSavedSearch(s: Omit<SavedSearch, 'id' | 'created_at'
 }
 
 export async function deleteSavedSearch(id: string) {
-  await supabase.from('saved_searches').delete().eq('id', id);
+  const { error } = await supabase.from('saved_searches').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
@@ -501,13 +528,14 @@ export async function dismissFollowUp(threadId: string, staffUserId: string) {
 }
 
 export async function fetchPendingFollowUps(staffUserId: string): Promise<FollowUpReminder[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('follow_up_reminders')
     .select('*')
     .eq('staff_user_id', staffUserId)
     .eq('is_dismissed', false)
     .lte('remind_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
     .order('remind_at');
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as FollowUpReminder[];
 }
 
@@ -515,11 +543,12 @@ export async function fetchPendingFollowUps(staffUserId: string): Promise<Follow
 // WEBHOOK ENDPOINTS
 // ============================================================
 export async function fetchWebhooks(orgId: string): Promise<WebhookEndpoint[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('webhook_endpoints')
     .select('*')
     .eq('organization_id', orgId)
     .order('created_at', { ascending: false });
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as WebhookEndpoint[];
 }
 
@@ -530,20 +559,23 @@ export async function createWebhook(wh: Omit<WebhookEndpoint, 'id' | 'created_at
 }
 
 export async function updateWebhook(id: string, updates: Partial<WebhookEndpoint>) {
-  await supabase.from('webhook_endpoints').update(updates).eq('id', id);
+  const { error } = await supabase.from('webhook_endpoints').update(updates).eq('id', id);
+  if (error) throw error;
 }
 
 export async function deleteWebhook(id: string) {
-  await supabase.from('webhook_endpoints').delete().eq('id', id);
+  const { error } = await supabase.from('webhook_endpoints').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function fetchWebhookLogs(webhookId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('webhook_delivery_logs')
     .select('*')
     .eq('webhook_id', webhookId)
     .order('delivered_at', { ascending: false })
     .limit(20);
+  if (error) throw error;
   return data ?? [];
 }
 
@@ -551,11 +583,12 @@ export async function fetchWebhookLogs(webhookId: string) {
 // API KEYS
 // ============================================================
 export async function fetchApiKeys(orgId: string): Promise<ApiKey[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('api_keys')
     .select('id, name, key_prefix, scopes, is_active, last_used_at, expires_at, created_at')
     .eq('organization_id', orgId)
     .order('created_at', { ascending: false });
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as ApiKey[];
 }
 
@@ -575,21 +608,24 @@ export async function createApiKey(orgId: string, createdBy: string, name: strin
 }
 
 export async function revokeApiKey(id: string) {
-  await supabase.from('api_keys').update({ is_active: false }).eq('id', id);
+  const { error } = await supabase.from('api_keys').update({ is_active: false }).eq('id', id);
+  if (error) throw error;
 }
 
 export async function deleteApiKey(id: string) {
-  await supabase.from('api_keys').delete().eq('id', id);
+  const { error } = await supabase.from('api_keys').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
 // MAILBOX DELEGATES
 // ============================================================
 export async function fetchDelegates(mailboxId: string): Promise<MailboxDelegate[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('mailbox_delegates')
     .select('*, staff_users(full_name)')
     .eq('mailbox_id', mailboxId);
+  if (error) throw error;
   return (Array.isArray(data) ? data : []) as MailboxDelegate[];
 }
 
@@ -602,7 +638,8 @@ export async function addDelegate(mailboxId: string, delegateUserId: string, per
 }
 
 export async function removeDelegate(id: string) {
-  await supabase.from('mailbox_delegates').delete().eq('id', id);
+  const { error } = await supabase.from('mailbox_delegates').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ============================================================
@@ -610,25 +647,28 @@ export async function removeDelegate(id: string) {
 // ============================================================
 export async function fullTextSearch(mailboxId: string, query: string) {
   // Try FTS on messages
-  const { data: msgData } = await supabase
+  const { data: msgData, error: msgError } = await supabase
     .from('messages')
     .select('thread_id, subject, from_address, from_name, body_text, sent_at')
     .eq('mailbox_id', mailboxId)
     .or(`subject.ilike.%${query}%,from_address.ilike.%${query}%,from_name.ilike.%${query}%,body_text.ilike.%${query}%`)
     .order('sent_at', { ascending: false })
     .limit(50);
+  if (msgError) throw msgError;
 
   // Also search contacts
   const orgQ = await supabase.from('mailboxes').select('organization_id').eq('id', mailboxId).single();
+  if (orgQ.error) throw orgQ.error;
   const orgId = orgQ.data?.organization_id;
   let contactMatches: Contact[] = [];
   if (orgId) {
-    const { data: cData } = await supabase
+    const { data: cData, error: contactError } = await supabase
       .from('contacts')
       .select('*')
       .eq('organization_id', orgId)
       .or(`name.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%`)
       .limit(10);
+    if (contactError) throw contactError;
     contactMatches = (Array.isArray(cData) ? cData : []) as Contact[];
   }
 

@@ -71,7 +71,15 @@ BEGIN
 END $$;
 
 DELETE FROM public.contacts
-WHERE name IN ('Abena Frimpong', 'Akosua Boateng', 'David Asante')
+WHERE name IN (
+     'Abena Frimpong',
+     'Akosua Boateng',
+     'David Asante',
+     'Emmanuel Tetteh',
+     'Inspector Mensah',
+     'James Quaye',
+     'Kwesi Asiedu'
+   )
    OR email IN (
      'abena.frimpong@example.com',
      'akosua.boateng@example.com',

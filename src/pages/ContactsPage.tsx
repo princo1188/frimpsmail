@@ -30,6 +30,14 @@ const EMPTY_CONTACT: ContactForm = { name: '', email: '', company: '', phone: ''
 interface GroupForm { name: string; description: string; }
 const EMPTY_GROUP: GroupForm = { name: '', description: '' };
 
+type ContactGroupWithCount = ContactGroup & { contact_group_members?: { count?: number }[] | number | null };
+
+function getGroupMemberCount(group: ContactGroupWithCount) {
+  const countRelation = group.contact_group_members;
+  if (typeof countRelation === 'number') return countRelation;
+  return countRelation?.[0]?.count ?? group.member_count ?? 0;
+}
+
 // ─── Contacts Tab ────────────────────────────────────────────────────────────
 function ContactsTab() {
   const { organization, staffUser } = useAuth();
@@ -45,11 +53,18 @@ function ContactsTab() {
   const [companyFilter, setCompanyFilter] = useState('all');
 
   const load = useCallback(async () => {
-    if (!organization) return;
+    if (!organization) { setLoading(false); return; }
     setLoading(true);
-    const data = await fetchContacts(organization.id);
-    setContacts(data);
-    setLoading(false);
+    try {
+      const data = await fetchContacts(organization.id);
+      setContacts(data);
+    } catch (error) {
+      console.error('Failed to load contacts', error);
+      toast.error('Failed to load contacts');
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
   }, [organization]);
 
   useEffect(() => { load(); }, [load]);
@@ -260,13 +275,21 @@ function GroupMembersDialog({
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [all, grpMembers] = await Promise.all([
-      fetchContacts(orgId),
-      fetchGroupMembers(group.id),
-    ]);
-    setAllContacts(all);
-    setMembers(grpMembers);
-    setLoading(false);
+    try {
+      const [all, grpMembers] = await Promise.all([
+        fetchContacts(orgId),
+        fetchGroupMembers(group.id),
+      ]);
+      setAllContacts(all);
+      setMembers(grpMembers);
+    } catch (error) {
+      console.error('Failed to load group members', error);
+      toast.error('Failed to load group members');
+      setAllContacts([]);
+      setMembers([]);
+    } finally {
+      setLoading(false);
+    }
   }, [orgId, group.id]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -391,11 +414,18 @@ function GroupsTab() {
   const [groupMembers, setGroupMembers] = useState<Record<string, Contact[]>>({});
 
   const load = useCallback(async () => {
-    if (!organization) return;
+    if (!organization) { setLoading(false); return; }
     setLoading(true);
-    const data = await fetchContactGroups(organization.id, activeMailbox?.id);
-    setGroups(data);
-    setLoading(false);
+    try {
+      const data = await fetchContactGroups(organization.id, activeMailbox?.id);
+      setGroups(data);
+    } catch (error) {
+      console.error('Failed to load contact groups', error);
+      toast.error('Failed to load contact groups');
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
   }, [organization, activeMailbox?.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -453,8 +483,14 @@ function GroupsTab() {
     } else {
       next.add(g.id);
       if (!groupMembers[g.id]) {
-        const members = await fetchGroupMembers(g.id);
-        setGroupMembers(prev => ({ ...prev, [g.id]: members }));
+        try {
+          const members = await fetchGroupMembers(g.id);
+          setGroupMembers(prev => ({ ...prev, [g.id]: members }));
+        } catch (error) {
+          console.error('Failed to load group members', error);
+          toast.error('Failed to load group members');
+          setGroupMembers(prev => ({ ...prev, [g.id]: [] }));
+        }
       }
     }
     setExpandedIds(next);
@@ -494,8 +530,7 @@ function GroupsTab() {
             <div className="divide-y divide-border">
               {filtered.map(g => {
                 const isExpanded = expandedIds.has(g.id);
-                const memberCount = (g as ContactGroup & { contact_group_members?: { count: number }[] })
-                  .contact_group_members?.[0]?.count ?? 0;
+                const memberCount = getGroupMemberCount(g as ContactGroupWithCount);
                 const owned = isOwned(g);
 
                 return (
@@ -635,10 +670,10 @@ function GroupsTab() {
       </AlertDialog>
 
       {/* Member Manager */}
-      {membersGroup && (
+      {membersGroup && organization && (
         <GroupMembersDialog
           group={membersGroup}
-          orgId={organization!.id}
+          orgId={organization.id}
           onClose={() => { setMembersGroup(null); load(); }}
         />
       )}

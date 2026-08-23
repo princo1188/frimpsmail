@@ -88,7 +88,15 @@ if (organizationError || !organization) {
 const { error: contactNameCleanupError } = await supabase
   .from('contacts')
   .delete()
-  .in('name', ['Abena Frimpong', 'Akosua Boateng', 'David Asante']);
+  .in('name', [
+    'Abena Frimpong',
+    'Akosua Boateng',
+    'David Asante',
+    'Emmanuel Tetteh',
+    'Inspector Mensah',
+    'James Quaye',
+    'Kwesi Asiedu',
+  ]);
 if (contactNameCleanupError) throw new Error(`Could not clean demo contacts by name: ${contactNameCleanupError.message}`);
 
 const { error: contactEmailCleanupError } = await supabase

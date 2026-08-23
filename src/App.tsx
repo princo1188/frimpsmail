@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { MailProvider } from '@/contexts/MailContext';
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AdminRoute from '@/components/AdminRoute';
@@ -33,7 +34,7 @@ function AppRoutes() {
       <Route path="/verify-2fa" element={<Verify2FAPage />} />
       {/* Protected (requires AAL2) */}
       <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
-      <Route path="/inbox/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
+      <Route path="/inbox/contacts" element={<ProtectedRoute><MailProvider><ContactsPage /></MailProvider></ProtectedRoute>} />
       <Route path="/inbox/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
       <Route path="/inbox/follow-ups" element={<ProtectedRoute><FollowUpsPage /></ProtectedRoute>} />
       <Route path="/inbox/resource-schedule" element={<ProtectedRoute><ResourceSchedulePage /></ProtectedRoute>} />

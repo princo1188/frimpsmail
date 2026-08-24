@@ -81,6 +81,12 @@ async function processMessage(
   const messageId = await insertMessage(supabase, mailboxId, threadId, msg, folderId);
   if (!messageId) return; // Duplicate, skip
 
+  const { error: syncUpdateError } = await supabase
+    .from('mailboxes')
+    .update({ last_synced_at: new Date().toISOString(), sync_status: 'active', last_error: null })
+    .eq('id', mailboxId);
+  if (syncUpdateError) console.error(`[SYNC] Could not update sync heartbeat for ${mailboxId}:`, syncUpdateError);
+
   // Store attachments
   if (msg.attachments.length) {
     await storeAttachments(supabase, mailboxId, messageId, msg.attachments);
@@ -408,7 +414,7 @@ async function sendOutboundEmail(outbound: {
   smtp_port: number;
   credential_vault_ref: string;
   display_name?: string | null;
-}, source: 'outbound' | 'scheduled'): Promise<void> {
+}, source: 'outbound' | 'scheduled'): Promise<{ messageId: string }> {
   const smtp = await getSmtpClient(mailbox);
   const { inReplyTo, references } = await resolveReplyHeaders(outbound.reply_to_message_id);
 
@@ -417,10 +423,9 @@ async function sendOutboundEmail(outbound: {
   for (const att of rawAttachments) {
     if (att?.path) {
       const { data: fileData, error: dlErr } = await supabase.storage.from('attachments').download(att.path);
-      if (fileData && !dlErr) {
-        const buffer = Buffer.from(await fileData.arrayBuffer());
-        attachments.push({ filename: att.filename, content: buffer, mimeType: att.mimeType ?? 'application/octet-stream' });
-      }
+      if (dlErr || !fileData) throw new Error(`Could not download attachment ${att.filename ?? att.path}: ${dlErr?.message ?? 'file not found'}`);
+      const buffer = Buffer.from(await fileData.arrayBuffer());
+      attachments.push({ filename: att.filename, content: buffer, mimeType: att.mimeType ?? 'application/octet-stream' });
     }
   }
 
@@ -435,21 +440,28 @@ async function sendOutboundEmail(outbound: {
     attachments,
   });
 
-  await recordSentMessage({
-    mailbox_id: outbound.mailbox_id,
-    reply_to_message_id: outbound.reply_to_message_id,
-    from_address: mailbox.email_address,
-    from_name: mailbox.display_name,
-    to_addresses: outbound.to_addresses,
-    cc_addresses: outbound.cc_addresses,
-    bcc_addresses: outbound.bcc_addresses,
-    subject: outbound.subject,
-    body_html: result.html,
-    body_text: result.text,
-    message_id: result.messageId,
-  });
+  try {
+    await recordSentMessage({
+      mailbox_id: outbound.mailbox_id,
+      reply_to_message_id: outbound.reply_to_message_id,
+      from_address: mailbox.email_address,
+      from_name: mailbox.display_name,
+      to_addresses: outbound.to_addresses,
+      cc_addresses: outbound.cc_addresses,
+      bcc_addresses: outbound.bcc_addresses,
+      subject: outbound.subject,
+      body_html: result.html,
+      body_text: result.text,
+      message_id: result.messageId,
+    });
+  } catch (error) {
+    // SMTP accepted the message. Leave it sent to prevent a retry from
+    // delivering a duplicate; IMAP Sent polling will reconcile the copy.
+    console.error(`[SMTP] Message ${outbound.id} delivered but sent-copy persistence failed:`, error);
+  }
 
   console.log(`[SMTP] ${source} message ${outbound.id} sent as ${result.messageId}`);
+  return { messageId: result.messageId };
 }
 
 /** Process scheduled messages due to be sent */
@@ -504,6 +516,14 @@ async function processScheduledMessages(): Promise<void> {
 
 /** Process queued outbound messages */
 async function processOutboundMessages(): Promise<void> {
+  const staleBefore = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { error: recoveryError } = await supabase
+    .from('outbound_messages')
+    .update({ status: 'pending', error: 'Recovered after a stale sending lock', updated_at: new Date().toISOString() })
+    .eq('status', 'sending')
+    .lt('updated_at', staleBefore);
+  if (recoveryError) console.error('[OUTBOUND] Failed to recover stale sending messages:', recoveryError);
+
   const { data: pending, error } = await supabase
     .from('outbound_messages')
     .select('*, mailboxes(email_address, smtp_host, smtp_port, credential_vault_ref, display_name)')
@@ -522,12 +542,14 @@ async function processOutboundMessages(): Promise<void> {
     const id = outbound.id as string;
 
     // Mark as sending to avoid duplicate picks from concurrent workers
-    const { error: lockErr } = await supabase
+    const { data: claim, error: lockErr } = await supabase
       .from('outbound_messages')
       .update({ status: 'sending', updated_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('status', 'pending');
-    if (lockErr) continue;
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (lockErr || !claim) continue;
 
     const mailbox = outbound.mailboxes as {
       email_address: string;
@@ -538,7 +560,7 @@ async function processOutboundMessages(): Promise<void> {
     };
 
     try {
-      await sendOutboundEmail(
+      const { messageId } = await sendOutboundEmail(
         {
           id,
           mailbox_id: outbound.mailbox_id as string,
@@ -555,7 +577,7 @@ async function processOutboundMessages(): Promise<void> {
       );
 
       await supabase.from('outbound_messages')
-        .update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update({ status: 'sent', message_id: messageId, error: null, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id);
     } catch (err) {
       console.error(`[OUTBOUND] Failed to send ${id}:`, err);

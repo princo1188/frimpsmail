@@ -294,11 +294,11 @@ function GroupMembersDialog({
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const memberIds = new Set(members.map(m => m.id));
+  const memberIds = new Set((members ?? []).filter(Boolean).map(m => m.id));
 
-  const filtered = allContacts.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
+  const filtered = (allContacts ?? []).filter((c): c is Contact => Boolean(c)).filter(c =>
+    (c.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (c.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   const toggle = async (contact: Contact) => {
@@ -329,7 +329,7 @@ function GroupMembersDialog({
             </p>
             {members.length > 0 && (
               <div className="flex flex-wrap gap-1.5 p-2 bg-muted/40 rounded-md min-h-[36px]">
-                {members.map(m => (
+                {members.filter(Boolean).map(m => (
                   <Badge key={m.id} variant="secondary" className="flex items-center gap-1 py-0.5 text-xs">
                     {m.name || m.email}
                     <button onClick={() => toggle(m)} className="ml-0.5 hover:text-destructive">
@@ -430,8 +430,8 @@ function GroupsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = groups.filter(g =>
-    g.name.toLowerCase().includes(search.toLowerCase()) ||
+  const filtered = (groups ?? []).filter((g): g is ContactGroup => Boolean(g)).filter(g =>
+    (g.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
     (g.description ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
@@ -595,11 +595,11 @@ function GroupsTab() {
                       <div className="px-4 pb-3 pl-14 space-y-1">
                         {groupMembers[g.id] === undefined ? (
                           <p className="text-xs text-muted-foreground">Loading members…</p>
-                        ) : groupMembers[g.id].length === 0 ? (
+                        ) : !(groupMembers[g.id]?.length) ? (
                           <p className="text-xs text-muted-foreground">No members yet. Click <UserCheck className="w-3 h-3 inline" /> to add members.</p>
                         ) : (
                           <div className="flex flex-wrap gap-1.5">
-                            {groupMembers[g.id].map(m => (
+                            {(groupMembers[g.id] ?? []).filter(Boolean).map(m => (
                               <Badge key={m.id} variant="secondary" className="text-xs">
                                 {m.name ? `${m.name} <${m.email}>` : m.email}
                               </Badge>

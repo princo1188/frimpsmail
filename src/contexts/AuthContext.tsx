@@ -16,6 +16,7 @@ interface AuthContextType {
   /** Whether the user has an active TOTP factor enrolled */
   mfaStatus: MfaStatus;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  updatePassword: (password: string) => Promise<{ error: string | null; requiresSignIn: boolean }>;
   signOut: () => Promise<void>;
   refreshStaffUser: () => Promise<void>;
   /** Re-check MFA AAL level — call after completing MFA verify/enroll */
@@ -118,6 +119,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const updatePassword = async (password: string) => {
+    const { error: updateError } = await supabase.auth.updateUser({ password });
+    if (updateError) return { error: updateError.message, requiresSignIn: false };
+
+    // Replace the cached auth state after changing credentials. If the refresh
+    // cannot complete, clear the local session rather than retaining stale data.
+    const { data, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !data.session) {
+      await supabase.auth.signOut({ scope: 'local' });
+      await applySession(null);
+      return { error: null, requiresSignIn: true };
+    }
+
+    await applySession(data.session);
+    return { error: null, requiresSignIn: false };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setStaffUser(null);
@@ -139,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user, session, staffUser, organization, loading,
       mfaVerified, mfaStatus,
-      signIn, signOut, refreshStaffUser, refreshMfaStatus,
+      signIn, updatePassword, signOut, refreshStaffUser, refreshMfaStatus,
     }}>
       {children}
     </AuthContext.Provider>

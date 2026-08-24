@@ -61,28 +61,28 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
     <div className="rich-text-toolbar flex max-h-24 shrink-0 flex-wrap items-center gap-1 overflow-y-auto border-b border-border/70 bg-muted/30 px-3 py-2 shadow-[0_1px_0_rgba(255,255,255,0.03)]">
       {/* Text style */}
       <Toggle
-        size="sm" aria-label="Bold"
+        size="sm" aria-label="Bold" title="Bold"
         pressed={editor.isActive('bold')}
         onPressedChange={() => editor.chain().focus().toggleBold().run()}
       >
         <Bold className="w-4 h-4" />
       </Toggle>
       <Toggle
-        size="sm" aria-label="Italic"
+        size="sm" aria-label="Italic" title="Italic"
         pressed={editor.isActive('italic')}
         onPressedChange={() => editor.chain().focus().toggleItalic().run()}
       >
         <Italic className="w-4 h-4" />
       </Toggle>
       <Toggle
-        size="sm" aria-label="Underline"
+        size="sm" aria-label="Underline" title="Underline"
         pressed={editor.isActive('underline')}
         onPressedChange={() => editor.chain().focus().toggleUnderline().run()}
       >
         <Underline className="w-4 h-4" />
       </Toggle>
       <Toggle
-        size="sm" aria-label="Strikethrough"
+        size="sm" aria-label="Strikethrough" title="Strikethrough"
         pressed={editor.isActive('strike')}
         onPressedChange={() => editor.chain().focus().toggleStrike().run()}
       >
@@ -165,26 +165,26 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
       <div className="w-px h-6 bg-border mx-1" />
 
       {/* Alignment */}
-      <Toggle size="sm" pressed={editor.isActive({ textAlign: 'left' })} onPressedChange={() => editor.chain().focus().setTextAlign('left').run()}>
+      <Toggle size="sm" aria-label="Align left" title="Align left" pressed={editor.isActive({ textAlign: 'left' })} onPressedChange={() => editor.chain().focus().setTextAlign('left').run()}>
         <AlignLeft className="w-4 h-4" />
       </Toggle>
-      <Toggle size="sm" pressed={editor.isActive({ textAlign: 'center' })} onPressedChange={() => editor.chain().focus().setTextAlign('center').run()}>
+      <Toggle size="sm" aria-label="Align center" title="Align center" pressed={editor.isActive({ textAlign: 'center' })} onPressedChange={() => editor.chain().focus().setTextAlign('center').run()}>
         <AlignCenter className="w-4 h-4" />
       </Toggle>
-      <Toggle size="sm" pressed={editor.isActive({ textAlign: 'right' })} onPressedChange={() => editor.chain().focus().setTextAlign('right').run()}>
+      <Toggle size="sm" aria-label="Align right" title="Align right" pressed={editor.isActive({ textAlign: 'right' })} onPressedChange={() => editor.chain().focus().setTextAlign('right').run()}>
         <AlignRight className="w-4 h-4" />
       </Toggle>
-      <Toggle size="sm" pressed={editor.isActive({ textAlign: 'justify' })} onPressedChange={() => editor.chain().focus().setTextAlign('justify').run()}>
+      <Toggle size="sm" aria-label="Justify text" title="Justify text" pressed={editor.isActive({ textAlign: 'justify' })} onPressedChange={() => editor.chain().focus().setTextAlign('justify').run()}>
         <AlignJustify className="w-4 h-4" />
       </Toggle>
 
       <div className="w-px h-6 bg-border mx-1" />
 
       {/* Lists */}
-      <Toggle size="sm" pressed={editor.isActive('bulletList')} onPressedChange={() => editor.chain().focus().toggleBulletList().run()}>
+      <Toggle size="sm" aria-label="Bulleted list" title="Bulleted list" pressed={editor.isActive('bulletList')} onPressedChange={() => editor.chain().focus().toggleBulletList().run()}>
         <List className="w-4 h-4" />
       </Toggle>
-      <Toggle size="sm" pressed={editor.isActive('orderedList')} onPressedChange={() => editor.chain().focus().toggleOrderedList().run()}>
+      <Toggle size="sm" aria-label="Numbered list" title="Numbered list" pressed={editor.isActive('orderedList')} onPressedChange={() => editor.chain().focus().toggleOrderedList().run()}>
         <ListOrdered className="w-4 h-4" />
       </Toggle>
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => editor.chain().focus().liftListItem('listItem').run()} title="Outdent">
@@ -232,6 +232,8 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
             {COMMON_EMOJIS.map(emoji => (
               <button
                 key={emoji}
+                aria-label={`Insert ${emoji} emoji`}
+                title={`Insert ${emoji}`}
                 onClick={() => addEmoji(emoji)}
                 className="text-lg hover:bg-muted rounded p-1"
               >
@@ -248,7 +250,7 @@ export default function RichTextToolbar({ editor, onInlineImage }: RichTextToolb
       </Button>
 
       {/* Blockquote */}
-      <Toggle size="sm" pressed={editor.isActive('blockquote')} onPressedChange={() => editor.chain().focus().toggleBlockquote().run()}>
+      <Toggle size="sm" aria-label="Block quote" title="Block quote" pressed={editor.isActive('blockquote')} onPressedChange={() => editor.chain().focus().toggleBlockquote().run()}>
         <Quote className="w-4 h-4" />
       </Toggle>
 

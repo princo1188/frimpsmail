@@ -40,9 +40,24 @@ serve(async (req) => {
     if (callerStaffError) throw new Error(`Could not verify caller: ${callerStaffError.message}`);
     if (!callerStaff) return jsonResponse({ error: 'Staff profile not found' }, 403);
 
-    const { mailbox_id, to, cc, bcc, subject, body_html, reply_to_message_id, attachments } = await req.json();
+    const payload = await req.json() as {
+      mailbox_id?: string;
+      to?: unknown;
+      cc?: unknown;
+      bcc?: unknown;
+      subject?: unknown;
+      body_html?: unknown;
+      reply_to_message_id?: string | null;
+      attachments?: unknown;
+    };
+    const { mailbox_id, to, cc, bcc, subject, body_html, reply_to_message_id, attachments } = payload;
 
-    if (!mailbox_id || !to?.length || !subject) {
+    const validRecipients = (value: unknown): value is string[] =>
+      Array.isArray(value) && value.length > 0 && value.every(address => typeof address === 'string' && address.trim().length > 0);
+    const validOptionalRecipients = (value: unknown): value is string[] | undefined =>
+      value === undefined || (Array.isArray(value) && value.every(address => typeof address === 'string' && address.trim().length > 0));
+
+    if (!mailbox_id || typeof subject !== 'string' || !subject.trim() || !validRecipients(to) || !validOptionalRecipients(cc) || !validOptionalRecipients(bcc)) {
       return jsonResponse({ error: 'mailbox_id, to[], subject required' }, 400);
     }
 
@@ -63,8 +78,8 @@ serve(async (req) => {
       to_addresses: to as string[],
       cc_addresses: (cc ?? []) as string[],
       bcc_addresses: (bcc ?? []) as string[],
-      subject,
-      body_html,
+      subject: subject.trim(),
+      body_html: typeof body_html === 'string' ? body_html : '',
       reply_to_message_id: reply_to_message_id ?? null,
       attachments_json: attachments ?? [],
       status: 'pending',
@@ -72,8 +87,10 @@ serve(async (req) => {
 
     if (insertErr) throw new Error(`Failed to queue outbound message: ${insertErr.message}`);
 
+    console.log(`[SEND] Queued email for mailbox ${mailbox_id} to ${to.length} recipient(s)`);
     return jsonResponse({ success: true, queued: true });
   } catch (err) {
+    console.error('[SEND] Failed to queue email:', err);
     return jsonResponse({ error: String(err) }, 500);
   }
 });

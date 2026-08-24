@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { supabase } from '@/db/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +36,34 @@ interface ComposePanelProps {
   initialDraft?: Message;
   onClose: () => void;
   initialContent?: string;
+  initialRecipients?: { to?: string[]; cc?: string[]; bcc?: string[] };
+}
+
+interface BrowserDraft {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyHtml: string;
+}
+
+const browserDraftKey = (mailboxId: string) => `fmail:compose-draft:${mailboxId}`;
+
+function readBrowserDraft(mailboxId?: string): BrowserDraft | null {
+  if (!mailboxId || typeof window === 'undefined') return null;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(browserDraftKey(mailboxId)) ?? 'null') as Partial<BrowserDraft> | null;
+    if (!saved) return null;
+    return {
+      to: Array.isArray(saved.to) ? saved.to.filter((value): value is string => typeof value === 'string') : [],
+      cc: Array.isArray(saved.cc) ? saved.cc.filter((value): value is string => typeof value === 'string') : [],
+      bcc: Array.isArray(saved.bcc) ? saved.bcc.filter((value): value is string => typeof value === 'string') : [],
+      subject: typeof saved.subject === 'string' ? saved.subject : '',
+      bodyHtml: typeof saved.bodyHtml === 'string' ? saved.bodyHtml : '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 function RecipientInput({
@@ -130,7 +159,7 @@ function RecipientInput({
             <button
               key={c.id}
               className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-baseline gap-2"
-              onMouseDown={() => void addAddress(c.email)}
+              onMouseDown={(event) => { event.preventDefault(); void addAddress(c.email); }}
             >
               <span className="font-medium">{c.name}</span>
               <span className="text-xs text-muted-foreground">{c.email}</span>
@@ -148,7 +177,7 @@ function RecipientInput({
                   <button
                     key={g.id}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                    onMouseDown={() => expandGroup(g)}
+                    onMouseDown={(event) => { event.preventDefault(); void expandGroup(g); }}
                   >
                     <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium flex-1">{g.name}</span>
@@ -164,15 +193,20 @@ function RecipientInput({
   );
 }
 
-export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, onClose, initialContent }: ComposePanelProps) {
+export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, onClose, initialContent, initialRecipients }: ComposePanelProps) {
   const { activeMailbox } = useMail();
   const { staffUser, organization } = useAuth();
+  // Server drafts and replies always take precedence over a browser-restored draft.
+  const restoredDraft = useRef<BrowserDraft | null>(
+    initialDraft || replyTo ? null : readBrowserDraft(activeMailbox?.id),
+  ).current;
 
-  const [to, setTo] = useState<string[]>(initialDraft?.to_addresses ?? (replyTo ? [replyTo.from_address ?? ''] : []));
-  const [cc, setCc] = useState<string[]>(initialDraft?.cc_addresses ?? []);
-  const [bcc, setBcc] = useState<string[]>(initialDraft?.bcc_addresses ?? []);
+  const [to, setTo] = useState<string[]>(initialDraft?.to_addresses ?? initialRecipients?.to ?? (replyTo ? [replyTo.from_address ?? ''] : restoredDraft?.to ?? []));
+  const [cc, setCc] = useState<string[]>(initialDraft?.cc_addresses ?? initialRecipients?.cc ?? restoredDraft?.cc ?? []);
+  const [bcc, setBcc] = useState<string[]>(initialDraft?.bcc_addresses ?? initialRecipients?.bcc ?? restoredDraft?.bcc ?? []);
   const [subject, setSubject] = useState(() => {
     if (initialDraft) return initialDraft.subject ?? '';
+    if (restoredDraft) return restoredDraft.subject;
     if (!replyTo) return '';
     if (mode === 'forward') return `Fwd: ${replyTo.subject ?? ''}`;
     const subj = replyTo.subject ?? '';
@@ -226,7 +260,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       FontSize,
     ],
-    content: initialDraft?.body_html ?? (mode === 'reply' || mode === 'replyAll'
+    content: initialDraft?.body_html ?? restoredDraft?.bodyHtml ?? (mode === 'reply' || mode === 'replyAll'
       ? `<p></p><p>—</p><blockquote><p><em>From: ${replyTo?.from_name ?? replyTo?.from_address}</em></p>${replyTo?.body_html ?? ''}</blockquote>`
       : mode === 'forward'
         ? `<p></p><p>—— Forwarded message ——</p><blockquote>${replyTo?.body_html ?? ''}</blockquote>`
@@ -270,6 +304,26 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
   }, [editor, scheduleDraftSave]);
 
   useEffect(() => { scheduleDraftSave(); }, [to, cc, bcc, subject, scheduleDraftSave]);
+
+  const persistBrowserDraft = useCallback(() => {
+    if (!activeMailbox?.id || !editor || initialDraft || replyTo) return;
+    try {
+      window.localStorage.setItem(browserDraftKey(activeMailbox.id), JSON.stringify({
+        to, cc, bcc, subject, bodyHtml: editor.getHTML(),
+      } satisfies BrowserDraft));
+    } catch (error) {
+      // Private browsing or a full quota should never prevent composing.
+      console.warn('Could not save browser draft', error);
+    }
+  }, [activeMailbox?.id, bcc, cc, editor, initialDraft, replyTo, subject, to]);
+
+  useEffect(() => { persistBrowserDraft(); }, [persistBrowserDraft]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.on('update', persistBrowserDraft);
+    return () => { editor.off('update', persistBrowserDraft); };
+  }, [editor, persistBrowserDraft]);
 
   // If initialContent (AI draft) provided, populate editor after mount
   useEffect(() => {
@@ -315,6 +369,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     try {
       if (draftRef.current) await discardLocalDraft(draftRef.current.threadId);
+      if (activeMailbox?.id) window.localStorage.removeItem(browserDraftKey(activeMailbox.id));
       toast.success('Draft discarded');
     } catch (error) {
       console.error('Failed to discard draft', error);
@@ -570,6 +625,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
         toast.success('Message sent');
       }
       if (draftRef.current) await discardLocalDraft(draftRef.current.threadId);
+      if (activeMailbox?.id) window.localStorage.removeItem(browserDraftKey(activeMailbox.id));
       onClose();
     } catch (e: unknown) {
       toast.error('Failed to send: ' + (e as Error).message);
@@ -689,28 +745,6 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
           </div>
         )}
 
-        {/* Templates picker */}
-        {showTemplates && templates.length > 0 && (
-          <div className="max-h-48 shrink-0 overflow-y-auto border-t border-border/70 bg-muted/30">
-            <p className="text-xs font-medium px-3 pt-2 pb-1 text-muted-foreground">Email Templates</p>
-            {templates.map(t => (
-              <button
-                key={t.id}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
-                onClick={() => {
-                  if (editor) editor.chain().focus().setContent(t.body_html).run();
-                  if (!subject) setSubject(t.subject ?? '');
-                  setShowTemplates(false);
-                  toast.success(`Template "${t.name}" applied`);
-                }}
-              >
-                <span className="font-medium block truncate">{t.name}</span>
-                <span className="text-xs text-muted-foreground truncate block">{t.subject}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Group picker panel */}
         {showGroupPicker && (
           <div className="shrink-0 border-t border-border/70 bg-muted/30">
@@ -818,7 +852,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
             <Clock className="w-4 h-4" />
           </Button>
 
-          <Button variant="ghost" size="icon" className={cn('h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40', showTemplates && 'bg-primary/10 text-primary')} title="Email templates" onClick={() => { setShowTemplates(!showTemplates); setShowSchedule(false); setShowGroupPicker(false); }}>
+          <Button variant="ghost" size="icon" className={cn('h-9 w-9 rounded-md text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40', showTemplates && 'bg-primary/10 text-primary')} title="Choose email template" aria-label="Choose email template" onClick={() => { setShowTemplates(true); setShowSchedule(false); setShowGroupPicker(false); }}>
             <LayoutTemplate className="w-4 h-4" />
           </Button>
 
@@ -857,6 +891,33 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
           </Button>
         </div>
       </div>
+      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
+        <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><LayoutTemplate className="h-5 w-5" /> Choose an email template</DialogTitle>
+            <DialogDescription>Selecting a template replaces the message body and fills an empty subject.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 overflow-y-auto rounded-md border border-border">
+            {templates.filter(Boolean).length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">No email templates are available.</p>
+            ) : templates.filter(Boolean).map(t => (
+              <button
+                key={t.id}
+                className="w-full border-b border-border px-4 py-3 text-left text-sm transition-colors last:border-0 hover:bg-muted"
+                onClick={() => {
+                  editor?.chain().focus().setContent(t.body_html ?? '').run();
+                  if (!subject) setSubject(t.subject ?? '');
+                  setShowTemplates(false);
+                  toast.success(`Template "${t.name}" applied`);
+                }}
+              >
+                <span className="block truncate font-medium">{t.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{t.subject || 'No subject'}</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -48,6 +48,7 @@ import { signaturePreviewPipeline } from '@/lib/signaturePreview';
 
 // ---- Security Tab ----
 function SecurityTab({ staffUserId }: { staffUserId: string }) {
+  const { updatePassword } = useAuth();
   const [current, setCurrent] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -84,21 +85,27 @@ function SecurityTab({ staffUserId }: { staffUserId: string }) {
       });
       if (signInError) {
         setError('Current password is incorrect');
+        toast.error('Current password is incorrect');
         setLoading(false);
         return;
       }
 
-      const { error: updateError } = await supabase.auth.updateUser({ password: newPw });
-      if (updateError) throw updateError;
+      const { error: updateError, requiresSignIn } = await updatePassword(newPw);
+      if (updateError) throw new Error(updateError);
 
-      toast.success('Password updated successfully');
+      toast.success(requiresSignIn
+        ? 'Password updated. Please sign in again with your new password.'
+        : 'Password updated successfully');
       setCurrent('');
       setNewPw('');
       setConfirm('');
     } catch (err) {
-      setError((err as Error)?.message?.includes('Password') || (err as Error)?.message?.includes('weak')
+      const message = (err as Error).message || 'Failed to update password';
+      const friendlyMessage = message.includes('Password') || message.includes('weak')
         ? 'Password is too weak. Choose a stronger password.'
-        : ((err as Error).message || 'Failed to update password'));
+        : message;
+      setError(friendlyMessage);
+      toast.error(friendlyMessage);
     } finally {
       setLoading(false);
     }

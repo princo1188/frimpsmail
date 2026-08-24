@@ -456,13 +456,17 @@ export async function deleteContactGroup(id: string) {
 }
 
 export async function fetchGroupMembers(groupId: string): Promise<Contact[]> {
+  if (!groupId) return [];
   const { data, error } = await supabase
     .from('contact_group_members')
     .select('contacts(*)')
     .eq('group_id', groupId);
   if (error) throw error;
-  const contacts = (data ?? []).map((row: Record<string, unknown>) => row.contacts as Contact).filter(Boolean);
-  return contacts;
+  // A member relation can be missing when its contact has been removed. Do not
+  // expose those null relations to callers that render the group member list.
+  return (Array.isArray(data) ? data : [])
+    .map((row: Record<string, unknown> | null) => row?.contacts)
+    .filter((contact): contact is Contact => Boolean(contact));
 }
 
 export async function addGroupMember(groupId: string, contactId: string) {
@@ -478,7 +482,10 @@ export async function removeGroupMember(groupId: string, contactId: string) {
 /** Expand a group into its member email addresses (for compose To/CC) */
 export async function expandGroupToEmails(groupId: string): Promise<string[]> {
   const members = await fetchGroupMembers(groupId);
-  return members.map(m => m.name ? `${m.name} <${m.email}>` : m.email);
+  return members
+    .filter((member): member is Contact => Boolean(member?.email))
+    .map(member => member.email.trim())
+    .filter((email, index, emails) => emails.indexOf(email) === index);
 }
 
 // ============================================================

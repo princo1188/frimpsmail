@@ -426,12 +426,13 @@ function printThread(subject: string, messages: Message[]) {
 
 // ---- MessageItem ----
 function MessageItem({
-  message, isExpanded, onToggle, onReply, isLast, onPreviewAttachment
+  message, isExpanded, onToggle, onReply, onReplyAll, isLast, onPreviewAttachment
 }: {
   message: Message;
   isExpanded: boolean;
   onToggle: () => void;
   onReply: (m: Message) => void;
+  onReplyAll: (m: Message) => void;
   isLast: boolean;
   onPreviewAttachment: (url: string, all: GalleryItem[], idx: number) => void;
 }) {
@@ -566,7 +567,7 @@ function MessageItem({
             <Button variant="outline" size="sm" onClick={() => onReply(message)}>
               <Reply className="w-3.5 h-3.5 mr-1.5" /> Reply
             </Button>
-            <Button variant="outline" size="sm" onClick={() => onReply(message)}>
+            <Button variant="outline" size="sm" onClick={() => onReplyAll(message)}>
               <CornerUpRight className="w-3.5 h-3.5 mr-1.5" /> Reply All
             </Button>
             <Button variant="outline" size="sm" onClick={() => onReply(message)}>
@@ -581,11 +582,12 @@ function MessageItem({
 
 // ---- ReadingPane ----
 export default function ReadingPane() {
-  const { activeThread, activeMessages, loadingMessages, starThread, archiveThread, deleteThread, moveToSpam, setReplyTo } = useMail();
+  const { activeThread, activeMessages, loadingMessages, starThread, archiveThread, deleteThread, moveToSpam, setReplyTo, activeMailbox } = useMail();
   const { staffUser } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [composingReply, setComposingReply] = useState(false);
   const [replyMessage, setReplyMessage] = useState<Message | null>(null);
+  const [replyAllRecipients, setReplyAllRecipients] = useState<string[] | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [gallery, setGallery] = useState<{ items: GalleryItem[]; index: number } | null>(null);
@@ -599,6 +601,7 @@ export default function ReadingPane() {
       setExpandedIds(new Set([activeMessages[activeMessages.length - 1].id]));
     }
     setComposingReply(false);
+    setReplyAllRecipients(null);
     setShowAi(false);
     setDraftContent(null);
     setDraftToEdit(null);
@@ -615,6 +618,26 @@ export default function ReadingPane() {
   const handleReply = (message: Message) => {
     setReplyMessage(message);
     setReplyTo(message);
+    setComposingReply(true);
+    setReplyAllRecipients(null);
+    setDraftContent(null);
+  };
+
+  const handleReplyAll = (message: Message) => {
+    const currentEmail = activeMailbox?.email_address?.trim().toLowerCase();
+    const seen = new Set<string>();
+    const recipients = [message.from_address, ...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])]
+      .filter((address): address is string => Boolean(address?.trim()))
+      .filter(address => {
+        const email = (address.match(/<([^>]+)>/)?.[1] ?? address).trim().toLowerCase();
+        if (!email || email === currentEmail || seen.has(email)) return false;
+        seen.add(email);
+        return true;
+      });
+
+    setReplyMessage(message);
+    setReplyTo(message);
+    setReplyAllRecipients(recipients);
     setComposingReply(true);
     setDraftContent(null);
   };
@@ -655,7 +678,7 @@ export default function ReadingPane() {
         <Button variant="ghost" size="icon" className="h-8 w-8" title="Reply (r)" onClick={() => activeMessages.length && handleReply(activeMessages[activeMessages.length - 1])}>
           <Reply className="w-4 h-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Reply All (a)" onClick={() => activeMessages.length && handleReply(activeMessages[activeMessages.length - 1])}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" title="Reply All (a)" onClick={() => activeMessages.length && handleReplyAll(activeMessages[activeMessages.length - 1])}>
           <CornerUpRight className="w-4 h-4" />
         </Button>
         <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward (f)" onClick={() => activeMessages.length && handleReply(activeMessages[activeMessages.length - 1])}>
@@ -728,6 +751,7 @@ export default function ReadingPane() {
               isExpanded={expandedIds.has(message.id)}
               onToggle={() => toggleMessage(message.id)}
               onReply={handleReply}
+              onReplyAll={handleReplyAll}
               isLast={idx === activeMessages.length - 1}
               onPreviewAttachment={handlePreviewAttachment}
             />
@@ -749,8 +773,9 @@ export default function ReadingPane() {
       {composingReply && replyMessage && (
         <div className="border-t border-border shrink-0 max-h-80">
           <ComposePanel
-            mode="reply"
+            mode={replyAllRecipients ? 'replyAll' : 'reply'}
             replyTo={replyMessage}
+            initialRecipients={replyAllRecipients ? { to: replyAllRecipients } : undefined}
             onClose={() => { setComposingReply(false); setDraftContent(null); }}
             initialContent={draftContent ?? undefined}
           />

@@ -37,22 +37,26 @@ export async function syncFolders(
     const normalized = normalizeFolder(name);
     const displayName = getFolderDisplayName(name);
 
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupError } = await supabase
       .from('mailbox_folders')
       .select('id')
       .eq('mailbox_id', mailboxId)
       .eq('imap_folder_name', name)
       .maybeSingle();
+    if (lookupError) throw new Error(`Could not look up folder "${name}": ${lookupError.message}`);
 
     if (existing) {
       folderIdMap.set(name, existing.id);
     } else {
-      const { data: inserted } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('mailbox_folders')
         .insert({ mailbox_id: mailboxId, imap_folder_name: name, normalized_type: normalized, display_name: displayName })
         .select('id')
         .single();
-      if (inserted) folderIdMap.set(name, inserted.id);
+      if (insertError || !inserted) {
+        throw new Error(`Could not create folder "${name}": ${insertError?.message ?? 'no id returned'}`);
+      }
+      folderIdMap.set(name, inserted.id);
     }
   }
 
@@ -136,7 +140,7 @@ export async function insertMessage(
 
   const spamStatus = msg.isSpamFolder ? 'confirmed_spam' : 'clean';
 
-  const { data: inserted } = await supabase
+  const { data: inserted, error } = await supabase
     .from('messages')
     .insert({
       thread_id: threadId,
@@ -160,6 +164,7 @@ export async function insertMessage(
     .select('id')
     .single();
 
+  if (error) throw new Error(`Could not store IMAP message ${msg.imapUid}: ${error.message}`);
   return inserted?.id ?? null;
 }
 

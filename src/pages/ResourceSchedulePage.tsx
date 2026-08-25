@@ -27,14 +27,19 @@ export default function ResourceSchedulePage() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [bookings, setBookings] = useState<ResourceBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const rangeStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
   const rangeEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
 
   const load = useCallback(async () => {
-    if (!organization) return;
+    if (!organization) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     try {
       const [res, bks] = await Promise.all([
         fetchResources(organization.id),
@@ -42,8 +47,9 @@ export default function ResourceSchedulePage() {
       ]);
       setResources(res.filter(r => r.is_active));
       setBookings(bks);
-    } catch {
-      // silent fail — page is read-only
+    } catch (error) {
+      console.error('Failed to load resource schedule', error);
+      setLoadError('We could not load the resource schedule. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -106,6 +112,11 @@ export default function ResourceSchedulePage() {
           <CardContent>
             {loading ? (
               <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">Loading schedule…</div>
+            ) : loadError ? (
+              <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center">
+                <p className="text-sm text-destructive">{loadError}</p>
+                <Button variant="outline" size="sm" onClick={() => { void load(); }}>Retry</Button>
+              </div>
             ) : resources.length === 0 ? (
               <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
                 No active resources configured yet.

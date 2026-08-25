@@ -226,12 +226,15 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
   const [expanded, setExpanded] = useState(false);
   const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
-  const [undoTimer, setUndoTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [awaitingUndo, setAwaitingUndo] = useState(false);
   const [sendCountdown, setSendCountdown] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const inlineImageRef = useRef<HTMLInputElement>(null);
   const sendAbortRef = useRef<(() => void) | null>(null);
+  const awaitingUndoRef = useRef(false);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const draftRef = useRef<{ threadId: string; messageId: string } | null>(
     initialDraft ? { threadId: initialDraft.thread_id, messageId: initialDraft.id } : null,
   );
@@ -353,19 +356,34 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     }
   }, [organization]);
 
-  // Cleanup undo timer on unmount
+  const cancelPendingSend = useCallback((notify = false) => {
+    sendAbortRef.current?.();
+    sendAbortRef.current = null;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+    undoTimerRef.current = null;
+    undoIntervalRef.current = null;
+    awaitingUndoRef.current = false;
+    setAwaitingUndo(false);
+    setSendCountdown(0);
+    if (notify) toast.info('Send cancelled');
+  }, []);
+
+  // Cleanup pending work when the compose panel is unmounted.
   useEffect(() => () => {
-    if (undoTimer) clearTimeout(undoTimer);
+    cancelPendingSend();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-  }, [undoTimer]);
+  }, [cancelPendingSend]);
 
   const handleClose = () => {
+    cancelPendingSend();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void saveDraft();
     onClose();
   };
 
   const handleDiscard = async () => {
+    cancelPendingSend();
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     try {
       if (draftRef.current) await discardLocalDraft(draftRef.current.threadId);
@@ -544,6 +562,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
   };
 
   const handleSend = async () => {
+    if (sending || awaitingUndo || awaitingUndoRef.current) return;
     if (!to.length) { toast.error('Please add at least one recipient'); return; }
     if (!subject.trim()) { toast.error('Please add a subject'); return; }
     if (!activeMailbox) { toast.error('No mailbox selected'); return; }
@@ -552,6 +571,8 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     if (!scheduleAt) {
       let cancelled = false;
       sendAbortRef.current = () => { cancelled = true; };
+      awaitingUndoRef.current = true;
+      setAwaitingUndo(true);
       setSendCountdown(7);
       const interval = setInterval(() => {
         setSendCountdown(prev => {
@@ -559,6 +580,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
           return prev - 1;
         });
       }, 1000);
+      undoIntervalRef.current = interval;
 
       const toastId = toast('Sending in 7s…', {
         duration: 7000,
@@ -566,9 +588,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
           label: 'Undo',
           onClick: () => {
             cancelled = true;
-            clearInterval(interval);
-            setSendCountdown(0);
-            sendAbortRef.current = null;
+            cancelPendingSend();
             toast.dismiss(toastId);
             toast.info('Send cancelled');
           },
@@ -577,11 +597,15 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
       const timer = setTimeout(async () => {
         clearInterval(interval);
+        undoIntervalRef.current = null;
+        undoTimerRef.current = null;
+        awaitingUndoRef.current = false;
         setSendCountdown(0);
+        setAwaitingUndo(false);
         if (cancelled) return;
         await doSend();
       }, 7000);
-      setUndoTimer(timer);
+      undoTimerRef.current = timer;
       return;
     }
 
@@ -831,7 +855,7 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
 
         {/* Action bar */}
         <div className="sticky bottom-0 z-10 flex shrink-0 items-center gap-2 border-t border-border/80 bg-card/95 px-4 py-3 shadow-[0_-10px_24px_rgba(0,0,0,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/85">
-          <Button size="sm" onClick={handleSend} disabled={sending || sendCountdown > 0} className="h-9 rounded-full px-5 font-semibold shadow-sm">
+          <Button size="sm" onClick={handleSend} disabled={sending || awaitingUndo} className="h-9 rounded-full px-5 font-semibold shadow-sm">
             {sending ? (
               <span className="flex items-center gap-1.5"><span className="h-3 w-3 border border-primary-foreground border-t-transparent rounded-full animate-spin" /> Sending…</span>
             ) : sendCountdown > 0 ? (

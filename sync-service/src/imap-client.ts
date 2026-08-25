@@ -274,12 +274,8 @@ export class ImapClient {
       connectionAlive = false;
     });
 
-    const pollTimer = setInterval(async () => {
-      if (!connectionAlive || !this.client.authenticated) {
-        console.log('[IMAP] Multi-folder poll ending: connection dead');
-        clearInterval(pollTimer);
-        return;
-      }
+    let consecutivePollFailures = 0;
+    while (connectionAlive && this.client.authenticated) {
       let pollSuccessful = true;
       for (const folderName of folderNames) {
         const state = folderState.get(folderName) ?? { lastSeenUid: 0, uidValidity: 0, isEmpty: false };
@@ -331,18 +327,28 @@ export class ImapClient {
         } catch (err) {
           console.error(`[IMAP] Poll error for ${folderName}:`, err);
           connectionAlive = false;
-          return;
+          break;
         }
       }
       // A successful empty poll is still proof the watcher is healthy.
-      if (pollSuccessful) await onPollSuccess?.();
-    }, pollIntervalMs);
+      if (connectionAlive && pollSuccessful) {
+        await onPollSuccess?.();
+        consecutivePollFailures = 0;
+      } else {
+        consecutivePollFailures += 1;
+      }
 
-    // Block until connection dies
-    while (connectionAlive) {
-      await new Promise(r => setTimeout(r, 5000));
+      if (!connectionAlive || !this.client.authenticated) break;
+
+      const delayMs = pollSuccessful
+        ? pollIntervalMs
+        : Math.min(pollIntervalMs * 2 ** consecutivePollFailures, 5 * 60_000);
+      if (!pollSuccessful) {
+        console.warn(`[IMAP] Poll failed; retrying in ${Math.round(delayMs / 1000)}s`);
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, delayMs));
     }
-    clearInterval(pollTimer);
+    console.log('[IMAP] Multi-folder poll ending: connection dead');
     throw new Error('IMAP connection lost');
   }
 

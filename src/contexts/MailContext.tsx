@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/db/supabase';
 import type { Mailbox, Thread, Message, MailboxFolder, FolderType } from '@/types/types';
 import { useAuth } from './AuthContext';
@@ -54,8 +54,16 @@ export function MailProvider({ children }: { children: ReactNode }) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [composing, setComposing] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const threadRequestRef = useRef(0);
+  const messageRequestRef = useRef(0);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   // Load mailboxes
   useEffect(() => {
@@ -96,6 +104,15 @@ export function MailProvider({ children }: { children: ReactNode }) {
     void loadFolders();
   }, [activeMailbox]);
 
+  // Invalidate in-flight results and remove mailbox/folder-specific selection
+  // before the next thread query begins.
+  useEffect(() => {
+    threadRequestRef.current += 1;
+    messageRequestRef.current += 1;
+    setActiveThread(null);
+    setActiveMessages([]);
+  }, [activeMailbox?.id, activeFolder]);
+
   const getFolderFilter = useCallback((folder: FolderType, foldersList: MailboxFolder[]) => {
     const f = foldersList.find(x => x.normalized_type === folder);
     return f ? { folder_id: f.id } : null;
@@ -103,21 +120,23 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
   const loadThreads = useCallback(async () => {
     if (!activeMailbox) return;
+    const requestId = ++threadRequestRef.current;
+    const mailboxId = activeMailbox.id;
     setLoadingThreads(true);
     try {
       let q = supabase
         .from('threads')
         .select('*')
-        .eq('mailbox_id', activeMailbox.id)
+        .eq('mailbox_id', mailboxId)
         .or('snoozed_until.is.null,snoozed_until.lte.' + new Date().toISOString())
         .order('last_message_at', { ascending: false })
         .limit(50);
 
-      if (searchQuery.trim() === 'follow_up:true') {
+      if (debouncedSearchQuery.trim() === 'follow_up:true') {
         q = q.not('follow_up_at', 'is', null);
-      } else if (searchQuery) {
+      } else if (debouncedSearchQuery) {
         // basic FTS fallback in threads
-        q = q.ilike('subject', `%${searchQuery}%`);
+        q = q.ilike('subject', `%${debouncedSearchQuery}%`);
       } else {
         const folderFilter = getFolderFilter(activeFolder, folders);
         if (folderFilter) q = q.eq('folder_id', folderFilter.folder_id);
@@ -126,6 +145,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await q;
       if (error) throw error;
+      if (requestId !== threadRequestRef.current) return;
       if (data) {
         setThreads(data as Thread[]);
       }
@@ -134,17 +154,17 @@ export function MailProvider({ children }: { children: ReactNode }) {
       // folder happens to be open.
       const inboxFolder = getFolderFilter('inbox', folders);
       let unreadQuery = supabase.from('threads').select('*', { count: 'exact', head: true })
-        .eq('mailbox_id', activeMailbox.id).eq('is_read', false);
+        .eq('mailbox_id', mailboxId).eq('is_read', false);
       unreadQuery = inboxFolder ? unreadQuery.eq('folder_id', inboxFolder.folder_id) : unreadQuery.is('folder_id', null);
       const { count, error: unreadError } = await unreadQuery;
       if (unreadError) throw unreadError;
-      setUnreadCount(count ?? 0);
+      if (requestId === threadRequestRef.current) setUnreadCount(count ?? 0);
     } catch (error) {
-      reportMailError('Failed to load threads', error);
+      if (requestId === threadRequestRef.current) reportMailError('Failed to load threads', error);
     } finally {
-      setLoadingThreads(false);
+      if (requestId === threadRequestRef.current) setLoadingThreads(false);
     }
-  }, [activeMailbox, activeFolder, folders, searchQuery, getFolderFilter]);
+  }, [activeMailbox, activeFolder, folders, debouncedSearchQuery, getFolderFilter]);
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
 
@@ -183,7 +203,8 @@ export function MailProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [activeMailbox, loadThreads]);
 
-  const loadMessages = async (threadId: string) => {
+  const loadMessages = useCallback(async (threadId: string) => {
+    const requestId = ++messageRequestRef.current;
     setLoadingMessages(true);
     try {
       const { data, error } = await supabase
@@ -193,18 +214,22 @@ export function MailProvider({ children }: { children: ReactNode }) {
         .order('sent_at', { ascending: true })
         .limit(100);
       if (error) throw error;
-      if (data) setActiveMessages(data as Message[]);
+      if (requestId === messageRequestRef.current) setActiveMessages(data as Message[]);
     } catch (error) {
-      reportMailError('Failed to load messages', error);
+      if (requestId === messageRequestRef.current) reportMailError('Failed to load messages', error);
     } finally {
-      setLoadingMessages(false);
+      if (requestId === messageRequestRef.current) setLoadingMessages(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (activeThread) loadMessages(activeThread.id);
-    else setActiveMessages([]);
-  }, [activeThread]);
+    if (activeThread) void loadMessages(activeThread.id);
+    else {
+      messageRequestRef.current += 1;
+      setActiveMessages([]);
+      setLoadingMessages(false);
+    }
+  }, [activeThread, loadMessages]);
 
   // Actions (optimistic)
   const markThreadRead = useCallback(async (threadId: string) => {

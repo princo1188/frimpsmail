@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { TopBar, SideRailContent, useKeyboardShortcuts } from '@/components/layouts/MailLayout';
 import ThreadList from '@/components/mail/ThreadList';
@@ -30,6 +30,11 @@ function InboxInner() {
   const { staffUser } = useAuth();
   const [searchParams] = useSearchParams();
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
+  const threadsRef = useRef(threads);
+
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
 
   const threadIndex = activeThread ? threads.findIndex(t => t.id === activeThread.id) : -1;
 
@@ -60,19 +65,7 @@ function InboxInner() {
   // Subscribe to new message notifications
   useEffect(() => {
     if (!activeMailbox || !staffUser) return;
-    const handleNewMessage = (threadId: string) => {
-      // If the cosmos:open-thread event fires, navigate there
-      const listener = (e: Event) => {
-        const detail = (e as CustomEvent<{ threadId: string }>).detail;
-        if (detail?.threadId === threadId) {
-          const thread = threads.find(t => t.id === detail.threadId);
-          if (thread) setActiveThread(thread);
-        }
-      };
-      window.addEventListener('cosmos:open-thread', listener);
-      return () => window.removeEventListener('cosmos:open-thread', listener);
-    };
-    subscribeToNewMessages(activeMailbox.id, staffUser.id, handleNewMessage);
+    subscribeToNewMessages(activeMailbox.id, staffUser.id);
     return () => unsubscribeFromMessages();
   }, [activeMailbox?.id, staffUser?.id]); // eslint-disable-line
 
@@ -81,7 +74,7 @@ function InboxInner() {
     const handler = (e: Event) => {
       const { threadId } = (e as CustomEvent<{ threadId: string }>).detail ?? {};
       if (!threadId) return;
-      const thread = threads.find(t => t.id === threadId);
+      const thread = threadsRef.current.find(t => t.id === threadId);
       if (thread) {
         setActiveThread(thread);
         window.focus();
@@ -89,7 +82,7 @@ function InboxInner() {
     };
     window.addEventListener('cosmos:open-thread', handler);
     return () => window.removeEventListener('cosmos:open-thread', handler);
-  }, [threads, setActiveThread]);
+  }, [setActiveThread]);
 
   // Update badge whenever unread count changes
   useEffect(() => {

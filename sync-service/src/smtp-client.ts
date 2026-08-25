@@ -32,7 +32,9 @@ export class SmtpClient {
       port: config.port,
       secure: config.port === 465,
       auth: { user: config.emailAddress, pass: config.password },
-      tls: { rejectUnauthorized: false },
+      // Never accept an untrusted certificate: this connection carries mailbox
+      // credentials and outbound message content.
+      tls: { rejectUnauthorized: true },
     });
   }
 

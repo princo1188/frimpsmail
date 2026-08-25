@@ -46,7 +46,9 @@ export class ImapClient {
       secure: config.imapPort === 993,
       auth: { user: config.emailAddress, pass: config.password },
       logger: false,
-      tls: { rejectUnauthorized: false },
+      // Never accept an untrusted certificate: this connection carries mailbox
+      // credentials and unencrypted message content.
+      tls: { rejectUnauthorized: true },
       // Longer timeouts for cPanel shared hosting which can be slow
       connectionTimeout: 60000,
       greetingTimeout: 30000,

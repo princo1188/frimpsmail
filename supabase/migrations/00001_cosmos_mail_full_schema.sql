@@ -367,10 +367,61 @@ VALUES
   ('logos', 'logos', true, 5242880)
 ON CONFLICT (id) DO NOTHING;
 
+-- Restrict attachment objects to a mailbox the caller can access or to a
+-- calendar event in the caller's organization. The two path formats below are
+-- already used by the mail and calendar clients respectively.
 CREATE POLICY "attachments_auth_select" ON storage.objects
-  FOR SELECT TO authenticated USING (bucket_id = 'attachments');
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'attachments'
+    AND (
+      ((storage.foldername(name))[1] = 'attachments' AND EXISTS (
+        SELECT 1 FROM mailboxes
+        WHERE mailboxes.id::text = (storage.foldername(name))[2]
+          AND mailboxes.id IN (SELECT get_my_mailbox_ids())
+      ))
+      OR ((storage.foldername(name))[1] = 'calendar-attachments' AND EXISTS (
+        SELECT 1 FROM calendar_events
+        WHERE calendar_events.id::text = (storage.foldername(name))[2]
+          AND calendar_events.organization_id = get_my_organization_id()
+      ))
+    )
+  );
 CREATE POLICY "attachments_auth_insert" ON storage.objects
-  FOR INSERT TO authenticated WITH CHECK (bucket_id = 'attachments');
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'attachments'
+    AND (
+      ((storage.foldername(name))[1] = 'attachments' AND EXISTS (
+        SELECT 1 FROM mailboxes
+        WHERE mailboxes.id::text = (storage.foldername(name))[2]
+          AND mailboxes.id IN (SELECT get_my_mailbox_ids())
+      ))
+      OR ((storage.foldername(name))[1] = 'calendar-attachments' AND EXISTS (
+        SELECT 1 FROM calendar_events
+        WHERE calendar_events.id::text = (storage.foldername(name))[2]
+          AND calendar_events.organization_id = get_my_organization_id()
+      ))
+    )
+  );
+CREATE POLICY "attachments_auth_update" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'attachments' AND (storage.foldername(name))[1] = 'attachments' AND EXISTS (
+    SELECT 1 FROM mailboxes WHERE mailboxes.id::text = (storage.foldername(name))[2]
+      AND mailboxes.id IN (SELECT get_my_mailbox_ids())
+  ));
+CREATE POLICY "attachments_auth_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (bucket_id = 'attachments' AND (
+    ((storage.foldername(name))[1] = 'attachments' AND EXISTS (
+      SELECT 1 FROM mailboxes WHERE mailboxes.id::text = (storage.foldername(name))[2]
+        AND mailboxes.id IN (SELECT get_my_mailbox_ids())
+    ))
+    OR ((storage.foldername(name))[1] = 'calendar-attachments' AND EXISTS (
+      SELECT 1 FROM calendar_events WHERE calendar_events.id::text = (storage.foldername(name))[2]
+        AND calendar_events.organization_id = get_my_organization_id()
+    ))
+  ));
 CREATE POLICY "logos_public_select" ON storage.objects
   FOR SELECT TO anon, authenticated USING (bucket_id = 'logos');
 CREATE POLICY "logos_auth_insert" ON storage.objects

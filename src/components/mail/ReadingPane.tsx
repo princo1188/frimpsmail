@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useMail } from '@/contexts/MailContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateSpamFlag, fetchAiCache, upsertAiCache, setFollowUp, dismissFollowUp } from '@/services/api';
@@ -536,7 +537,13 @@ function MessageItem({
           <div className="email-body">
             {message.body_html ? (
               <div
-                dangerouslySetInnerHTML={{ __html: message.body_html }}
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(message.body_html ?? '', {
+                    USE_PROFILES: { html: true },
+                    FORBID_TAGS: ['base', 'form', 'iframe', 'object', 'embed', 'svg', 'math'],
+                    FORBID_ATTR: ['style'],
+                  }),
+                }}
                 className="prose prose-sm max-w-none dark:prose-invert overflow-x-auto"
               />
             ) : (

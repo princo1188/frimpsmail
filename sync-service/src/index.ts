@@ -1,5 +1,8 @@
 import 'dotenv/config';
 import { createServer, type Server } from 'node:http';
+import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ImapClient, MailboxConfig } from './imap-client';
 import { getCredential } from './credential-vault';
@@ -32,6 +35,58 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/**
+ * A second line of defence for deployments where the worker is accidentally
+ * started more than once. The database queue claim remains the authoritative
+ * cross-process reservation mechanism.
+ */
+function acquireProcessLock(): () => void {
+  const lockPath = process.env.SYNC_PROCESS_LOCK_PATH ?? join(tmpdir(), 'sync-service.process.lock');
+  const token = `${process.pid}:${Date.now()}`;
+
+  const writeLock = () => {
+    const fd = openSync(lockPath, 'wx', 0o600);
+    try {
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, token, started_at: new Date().toISOString() }));
+    } finally {
+      closeSync(fd);
+    }
+  };
+
+  try {
+    writeLock();
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'EEXIST') throw error;
+
+    let stale = false;
+    try {
+      const existing = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: number };
+      if (!existing.pid) stale = true;
+      else {
+        try { process.kill(existing.pid, 0); } catch { stale = true; }
+      }
+    } catch {
+      stale = true;
+    }
+
+    if (!stale) {
+      throw new Error(`Another sync-service process is already running (lock: ${lockPath})`);
+    }
+
+    unlinkSync(lockPath);
+    writeLock();
+  }
+
+  return () => {
+    try {
+      const existing = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: string };
+      if (existing.token === token) unlinkSync(lockPath);
+    } catch {
+      // The OS cleans up the process; a later startup also removes stale locks.
+    }
+  };
+}
+
 /** Lightweight liveness endpoint that stays responsive during mailbox sync. */
 function startHealthServer(): Server {
   const server = createServer((request, response) => {
@@ -51,7 +106,7 @@ function startHealthServer(): Server {
   return server;
 }
 
-const healthServer = startHealthServer();
+let healthServer: Server | null = null;
 
 async function processMessage(
   supabase: SupabaseClient,
@@ -519,17 +574,13 @@ async function processOutboundMessages(): Promise<void> {
   const staleBefore = new Date(Date.now() - 10 * 60_000).toISOString();
   const { error: recoveryError } = await supabase
     .from('outbound_messages')
-    .update({ status: 'pending', error: 'Recovered after a stale sending lock', updated_at: new Date().toISOString() })
+    .update({ status: 'pending', locked_at: null, error: 'Recovered after a stale sending lock', updated_at: new Date().toISOString() })
     .eq('status', 'sending')
     .lt('updated_at', staleBefore);
   if (recoveryError) console.error('[OUTBOUND] Failed to recover stale sending messages:', recoveryError);
 
   const { data: pending, error } = await supabase
-    .from('outbound_messages')
-    .select('*, mailboxes(email_address, smtp_host, smtp_port, credential_vault_ref, display_name)')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(10);
+    .rpc('claim_outbound_messages', { p_limit: 10 });
 
   if (error) {
     console.error('[OUTBOUND] Failed to fetch queue:', error);
@@ -537,27 +588,34 @@ async function processOutboundMessages(): Promise<void> {
   }
   if (!pending?.length) return;
 
+  const mailboxIds = [...new Set(pending.map((msg: { mailbox_id: string }) => msg.mailbox_id))];
+  const { data: mailboxes, error: mailboxError } = await supabase
+    .from('mailboxes')
+    .select('id, email_address, smtp_host, smtp_port, credential_vault_ref, display_name')
+    .in('id', mailboxIds);
+  if (mailboxError) {
+    console.error('[OUTBOUND] Failed to load claimed message mailboxes:', mailboxError);
+    return;
+  }
+  const mailboxesById = new Map((mailboxes ?? []).map(mailbox => [mailbox.id, mailbox]));
+
   for (const msg of pending) {
     const outbound = msg as Record<string, unknown>;
     const id = outbound.id as string;
-
-    // Mark as sending to avoid duplicate picks from concurrent workers
-    const { data: claim, error: lockErr } = await supabase
-      .from('outbound_messages')
-      .update({ status: 'sending', updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('status', 'pending')
-      .select('id')
-      .maybeSingle();
-    if (lockErr || !claim) continue;
-
-    const mailbox = outbound.mailboxes as {
+    const mailbox = mailboxesById.get(outbound.mailbox_id as string) as {
+      id: string;
       email_address: string;
       smtp_host: string;
       smtp_port: number;
       credential_vault_ref: string;
       display_name: string;
     };
+    if (!mailbox) {
+      await supabase.from('outbound_messages')
+        .update({ status: 'failed', error: 'Mailbox no longer exists', locked_at: null, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      continue;
+    }
 
     try {
       const { messageId } = await sendOutboundEmail(
@@ -577,12 +635,12 @@ async function processOutboundMessages(): Promise<void> {
       );
 
       await supabase.from('outbound_messages')
-        .update({ status: 'sent', message_id: messageId, error: null, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update({ status: 'sent', message_id: messageId, error: null, sent_at: new Date().toISOString(), locked_at: null, updated_at: new Date().toISOString() })
         .eq('id', id);
     } catch (err) {
       console.error(`[OUTBOUND] Failed to send ${id}:`, err);
       await supabase.from('outbound_messages')
-        .update({ status: 'failed', error: String(err), updated_at: new Date().toISOString() })
+        .update({ status: 'failed', error: String(err), locked_at: null, updated_at: new Date().toISOString() })
         .eq('id', id);
     }
   }
@@ -658,6 +716,9 @@ function writeHeartbeat(): void {
 
 async function main(): Promise<void> {
   console.log('[INIT] Frimps Mail Sync Service starting...');
+  const releaseProcessLock = acquireProcessLock();
+  process.on('exit', releaseProcessLock);
+  healthServer = startHealthServer();
 
   // Global safety net: log uncaught errors but keep process alive
   process.on('uncaughtException', err => console.error('[FATAL] Uncaught exception:', err));
@@ -810,7 +871,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', async () => {
     console.log('[SHUTDOWN] SIGTERM received, shutting down gracefully...');
     await channel.unsubscribe();
-    await new Promise<void>(resolve => healthServer.close(() => resolve()));
+    if (healthServer) await new Promise<void>(resolve => healthServer!.close(() => resolve()));
     process.exit(0);
   });
 }

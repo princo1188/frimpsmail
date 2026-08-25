@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Mail, ShieldAlert } from 'lucide-react';
+import { Eye, EyeOff, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +11,7 @@ import type { BrandingConfig } from '@/types/types';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { signIn, user, mfaStatus, mfaVerified } = useAuth();
+  const { signIn, user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -24,12 +24,9 @@ export default function LoginPage() {
     logo_url: '',
   });
 
-  // Route only after the authoritative MFA state is known.
   useEffect(() => {
-    if (!user) return;
-    if (mfaStatus === 'not_enrolled') navigate('/setup-2fa', { replace: true });
-    if (mfaStatus === 'enrolled') navigate(mfaVerified ? '/inbox' : '/verify-2fa', { replace: true });
-  }, [user, mfaStatus, mfaVerified, navigate]);
+    if (user) navigate('/inbox', { replace: true });
+  }, [user, navigate]);
 
   // Load branding from domain
   useEffect(() => {
@@ -82,30 +79,6 @@ export default function LoginPage() {
           boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
         }}
       >
-        {/* 2FA reminder for logged-in but not enrolled users */}
-        {user && mfaStatus === 'not_enrolled' && (
-          <div className="mb-6 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3">
-            <div className="flex items-start gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                  Two-factor authentication required
-                </p>
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                  Set up 2FA now to access your mailbox.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-2 h-7 rounded-full text-xs"
-                  onClick={() => navigate('/setup-2fa')}
-                >
-                  Set up 2FA
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           {branding.logo_url ? (

@@ -45,10 +45,11 @@ serve(async (req) => {
       return jsonResponse({ error: 'email and password required' }, 400);
     }
 
+    let mailboxEmail: string | null = null;
     if (mailbox_id) {
       const { data: mailbox, error: mailboxError } = await supabase
         .from('mailboxes')
-        .select('id, organization_id, staff_user_id')
+        .select('id, organization_id, staff_user_id, email_address')
         .eq('id', mailbox_id)
         .maybeSingle();
       if (mailboxError) throw new Error(`Could not verify mailbox: ${mailboxError.message}`);
@@ -56,18 +57,20 @@ serve(async (req) => {
       const isOwner = mailbox.staff_user_id === callerStaff.id;
       const isOrgAdmin = callerStaff.role === 'admin' && mailbox.organization_id === callerStaff.organization_id;
       if (!isOwner && !isOrgAdmin) return jsonResponse({ error: 'Mailbox access denied' }, 403);
+      mailboxEmail = mailbox.email_address;
     } else if (callerStaff.role !== 'admin') {
       return jsonResponse({ error: 'Admin access required' }, 403);
     }
 
     // Upsert the secret atomically — creates on first save, updates on every subsequent save.
     // vault_upsert_secret returns the UUID regardless of whether it was created or updated.
-    const secretName = `mailbox_${email.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_password`;
+    const secretOwner = mailbox_id ?? email.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const secretName = `mailbox_${secretOwner}_${crypto.randomUUID()}_password`;
 
     const { data: secretId, error: vaultError } = await supabase.rpc('vault_upsert_secret', {
       p_secret:      password,
       p_name:        secretName,
-      p_description: `IMAP/SMTP password for ${email}`,
+      p_description: `IMAP/SMTP password for ${mailboxEmail ?? email}`,
     });
 
     if (vaultError || !secretId) {

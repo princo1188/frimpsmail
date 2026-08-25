@@ -162,9 +162,10 @@ export default function AdminMailboxesPage() {
     if (!editingMb && !mbForm.password) { toast.error('Password is required for new mailboxes'); return; }
     setSubmitting(true);
     try {
-      // Store credentials via Edge Function
+      let vaultRef: string | null = null;
+      // Store mailbox credentials separately from the web-app account password.
       if (mbForm.password) {
-        const { error: vaultErr } = await supabase.functions.invoke('store-mailbox-credentials', {
+        const { data: vaultData, error: vaultErr } = await supabase.functions.invoke('store-mailbox-credentials', {
           body: {
             email: mbForm.email_address,
             password: mbForm.password,
@@ -175,9 +176,11 @@ export default function AdminMailboxesPage() {
           const msg = await vaultErr?.context?.text?.();
           throw new Error(msg || vaultErr.message);
         }
-      } else if (editingMb) {
-        // Update mailbox details only (no password change)
-        const { error } = await supabase.from('mailboxes').update({
+        vaultRef = (vaultData as { vault_ref?: string } | null)?.vault_ref ?? null;
+        if (!vaultRef && !editingMb) throw new Error('Credential vault reference was not returned');
+      }
+
+      const mailboxDetails = {
           email_address: mbForm.email_address,
           display_name: mbForm.display_name || null,
           imap_host: mbForm.imap_host,
@@ -185,7 +188,18 @@ export default function AdminMailboxesPage() {
           smtp_host: mbForm.smtp_host,
           smtp_port: mbForm.smtp_port,
           staff_user_id: mbForm.staff_user_id === 'none' ? null : mbForm.staff_user_id,
-        }).eq('id', editingMb.id);
+      };
+      if (editingMb) {
+        const { error } = await supabase.from('mailboxes').update(mailboxDetails).eq('id', editingMb.id);
+        if (error) throw error;
+      } else {
+        if (!organization) throw new Error('Organization not found');
+        const { error } = await supabase.from('mailboxes').insert({
+          ...mailboxDetails,
+          organization_id: organization.id,
+          credential_vault_ref: vaultRef,
+          sync_status: 'pending',
+        });
         if (error) throw error;
       }
       toast.success(editingMb ? 'Mailbox updated' : 'Mailbox added — pending sync');

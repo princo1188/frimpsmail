@@ -5,6 +5,9 @@ import type { StaffUser, Organization } from '@/types/types';
 
 export type MfaStatus = 'loading' | 'enrolled' | 'not_enrolled';
 
+// Temporary rollout switch. MFA data remains untouched, but it cannot block login.
+const MFA_ENFORCEMENT_ENABLED = false;
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -35,6 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>('loading');
 
   const checkMfaLevel = useCallback(async () => {
+    if (!MFA_ENFORCEMENT_ENABLED) {
+      setMfaVerified(true);
+      setMfaStatus('not_enrolled');
+      return;
+    }
     try {
       const { data: aalData, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (error) throw error;

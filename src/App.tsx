@@ -18,8 +18,6 @@ import WebhooksPage from '@/pages/WebhooksPage';
 import ContactsPage from '@/pages/ContactsPage';
 import CalendarPage from '@/pages/CalendarPage';
 import SettingsPage from '@/pages/SettingsPage';
-import Setup2FAPage from '@/pages/Setup2FAPage';
-import Verify2FAPage from '@/pages/Verify2FAPage';
 import AdminResourcesPage from '@/pages/AdminResourcesPage';
 import AdminSyncStatusPage from '@/pages/AdminSyncStatusPage';
 import ResourceSchedulePage from '@/pages/ResourceSchedulePage';
@@ -59,8 +57,8 @@ function AppRoutes() {
       <Route path="/" element={<PublicModule name="Landing"><LandingPage /></PublicModule>} />
       <Route path="/login" element={<PublicModule name="Login"><LoginPage /></PublicModule>} />
       {/* MFA flow — semi-authenticated (password done, MFA pending) */}
-      <Route path="/setup-2fa" element={<PublicModule name="Two-factor setup"><Setup2FAPage /></PublicModule>} />
-      <Route path="/verify-2fa" element={<PublicModule name="Two-factor verification"><Verify2FAPage /></PublicModule>} />
+      <Route path="/setup-2fa" element={<Navigate to="/inbox" replace />} />
+      <Route path="/verify-2fa" element={<Navigate to="/inbox" replace />} />
       {/* Protected (requires AAL2) */}
       <Route path="/inbox" element={<MailModule name="Inbox"><InboxPage /></MailModule>} />
       <Route path="/inbox/contacts" element={<MailModule name="Contacts"><ContactsPage /></MailModule>} />

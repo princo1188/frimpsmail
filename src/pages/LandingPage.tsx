@@ -5,7 +5,7 @@ import {
   ToggleRight, Clock, Paperclip, ChevronDown, ChevronUp,
   ArrowRight, Eye, EyeOff, Zap, Globe, Lock, Server,
   CheckCircle , BarChart3, Bot, Inbox, Send,
-  Moon, Sun, Monitor, ShieldAlert
+  Moon, Sun, Monitor
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -157,7 +157,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 // ─── Integrated login panel ───────────────────────────────────────────────────
 function LoginPanel() {
-  const { signIn, user, mfaStatus, mfaVerified } = useAuth();
+  const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -166,10 +166,8 @@ function LoginPanel() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!user) return;
-    if (mfaStatus === 'not_enrolled') navigate('/setup-2fa', { replace: true });
-    if (mfaStatus === 'enrolled') navigate(mfaVerified ? '/inbox' : '/verify-2fa', { replace: true });
-  }, [user, mfaStatus, mfaVerified, navigate]);
+    if (user) navigate('/inbox', { replace: true });
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,18 +268,16 @@ function LoginPanel() {
 
 // ─── Main Landing Page ────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const { user, loading, mfaStatus } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const featuresRef = useRef<HTMLDivElement>(null);
 
-  // Redirect authenticated users, but keep MFA-not-enrolled users on the page
-  // so they see the 2FA reminder banner and can navigate to setup.
   useEffect(() => {
-    if (!loading && user && mfaStatus !== 'not_enrolled') {
+    if (!loading && user) {
       navigate('/inbox', { replace: true });
     }
-  }, [user, loading, mfaStatus, navigate]);
+  }, [user, loading, navigate]);
 
   const scrollToFeatures = () => {
     featuresRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -291,26 +287,6 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* ── 2FA Reminder Banner (authenticated but not enrolled) ─────────────── */}
-      {user && mfaStatus === 'not_enrolled' && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900 px-4 py-2.5">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
-              <ShieldAlert className="w-4 h-4 shrink-0" />
-              <span className="font-medium">Secure your account:</span>
-              <span className="hidden sm:inline">Two-factor authentication is required before you can access your mailbox.</span>
-            </div>
-            <Button
-              size="sm"
-              className="shrink-0 h-7 rounded-full text-xs"
-              onClick={() => navigate('/setup-2fa')}
-            >
-              Set up 2FA
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* ── Top Nav ───────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-14 flex items-center justify-between">

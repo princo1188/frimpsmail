@@ -71,6 +71,56 @@ export class ImapClient {
     return folders.map(f => f.path);
   }
 
+  /** Extract MIME attachment parts from an IMAP BODYSTRUCTURE tree. */
+  private attachmentParts(node: any, path = ''): Array<{ part: string; filename: string; mimeType: string }> {
+    if (!node) return [];
+    const children = node.childNodes ?? node.children ?? [];
+    if (Array.isArray(children) && children.length) {
+      return children.flatMap((child, index) => this.attachmentParts(
+        child,
+        child.part ?? (path ? `${path}.${index + 1}` : String(index + 1)),
+      ));
+    }
+
+    const disposition = String(node.disposition ?? '').toLowerCase();
+    const filename = node.dispositionParameters?.filename ?? node.parameters?.name ?? node.filename;
+    const part = node.part ?? path;
+    if (!part || (!filename && disposition !== 'attachment')) return [];
+
+    const safeFilename = String(filename ?? `attachment-${part}`).replace(/[\\/:*?"<>|\x00-\x1F]/g, '_');
+    return [{
+      part,
+      filename: safeFilename || `attachment-${part}`,
+      mimeType: `${node.type ?? 'application'}/${node.subtype ?? 'octet-stream'}`.toLowerCase(),
+    }];
+  }
+
+  /** Download MIME attachment bodies while enforcing the private bucket limit. */
+  private async fetchAttachments(uid: number, bodyStructure: unknown): Promise<ParsedMessage['attachments']> {
+    const parts = this.attachmentParts(bodyStructure);
+    const attachments: ParsedMessage['attachments'] = [];
+    const maxBytes = 50 * 1024 * 1024;
+
+    for (const descriptor of parts) {
+      const download = await this.client.download(uid, descriptor.part, { uid: true });
+      const chunks: Buffer[] = [];
+      let sizeBytes = 0;
+      for await (const chunk of download.content) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        sizeBytes += buffer.length;
+        if (sizeBytes > maxBytes) throw new Error(`Attachment ${descriptor.filename} exceeds the 50 MB limit`);
+        chunks.push(buffer);
+      }
+      attachments.push({
+        filename: descriptor.filename,
+        mimeType: descriptor.mimeType,
+        sizeBytes,
+        content: Buffer.concat(chunks),
+      });
+    }
+    return attachments;
+  }
+
   /** Backfill messages from the last N days in a given folder */
   async backfill(
     folderName: string,
@@ -106,7 +156,7 @@ export class ImapClient {
             bodyText: '',
             sentAt: envelope?.date ?? new Date(),
             headers,
-            attachments: [],
+            attachments: await this.fetchAttachments(msg.uid, msg.bodyStructure),
             inboxFolderName: folderName,
             isRead: msg.flags?.has('\\Seen') ?? false,
             isSpamFolder: ['junk', 'spam'].includes(folderName.toLowerCase()),
@@ -134,7 +184,7 @@ export class ImapClient {
     }
   }
 
-  private parseMessage(msg: any, folderName: string): ParsedMessage {
+  private async parseMessage(msg: any, folderName: string): Promise<ParsedMessage> {
     const envelope = msg.envelope;
     const headers = flattenHeaders(msg.headers as unknown as Record<string, string>);
     const parsed: ParsedMessage = {
@@ -150,7 +200,7 @@ export class ImapClient {
       bodyText: '',
       sentAt: envelope?.date ?? new Date(),
       headers,
-      attachments: [],
+      attachments: await this.fetchAttachments(msg.uid, msg.bodyStructure),
       inboxFolderName: folderName,
       isRead: msg.flags?.has('\\Seen') ?? false,
       isSpamFolder: ['junk', 'spam'].includes(folderName.toLowerCase()),
@@ -173,6 +223,7 @@ export class ImapClient {
     folderNames: string[],
     onMessage: (msg: ParsedMessage) => Promise<void>,
     pollIntervalMs = 30000,
+    onPollSuccess?: () => Promise<void>,
   ): Promise<void> {
     if (!folderNames.length) throw new Error('watchFolders: no folder names provided');
 
@@ -229,6 +280,7 @@ export class ImapClient {
         clearInterval(pollTimer);
         return;
       }
+      let pollSuccessful = true;
       for (const folderName of folderNames) {
         const state = folderState.get(folderName) ?? { lastSeenUid: 0, uidValidity: 0, isEmpty: false };
         try {
@@ -240,6 +292,7 @@ export class ImapClient {
           }
         } catch (err) {
           console.warn(`[IMAP] Could not get status for ${folderName} during poll:`, err);
+          pollSuccessful = false;
           continue;
         }
 
@@ -260,7 +313,7 @@ export class ImapClient {
                 maxUid = Math.max(maxUid, msg.uid);
                 found++;
                 try {
-                  const parsed = this.parseMessage(msg, folderName);
+                  const parsed = await this.parseMessage(msg, folderName);
                   parsed.imapUidvalidity = uidValidity;
                   await onMessage(parsed);
                 } catch (err) {
@@ -281,6 +334,8 @@ export class ImapClient {
           return;
         }
       }
+      // A successful empty poll is still proof the watcher is healthy.
+      if (pollSuccessful) await onPollSuccess?.();
     }, pollIntervalMs);
 
     // Block until connection dies
@@ -296,8 +351,9 @@ export class ImapClient {
     folderName: string,
     onMessage: (msg: ParsedMessage) => Promise<void>,
     pollIntervalMs = 30000,
+    onPollSuccess?: () => Promise<void>,
   ): Promise<void> {
-    await this.watchFolders([folderName], onMessage, pollIntervalMs);
+    await this.watchFolders([folderName], onMessage, pollIntervalMs, onPollSuccess);
   }
 
   async fetchByUid(
@@ -327,7 +383,7 @@ export class ImapClient {
           bodyText: '',
           sentAt: envelope?.date ?? new Date(),
           headers,
-          attachments: [],
+          attachments: await this.fetchAttachments(msg.uid, msg.bodyStructure),
           inboxFolderName: folderName,
           isRead: msg.flags?.has('\\Seen') ?? false,
           isSpamFolder: ['junk', 'spam'].includes(folderName.toLowerCase()),

@@ -176,20 +176,21 @@ export async function storeAttachments(
   attachments: ParsedMessage['attachments'],
 ): Promise<void> {
   for (const att of attachments) {
-    const storagePath = `attachments/${mailboxId}/${messageId}/${att.filename}`;
+    const safeFilename = att.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `attachments/${mailboxId}/${messageId}/${safeFilename}`;
     const { error: uploadError } = await supabase.storage
       .from('attachments')
       .upload(storagePath, att.content, { contentType: att.mimeType, upsert: true });
+    if (uploadError) throw new Error(`Could not upload attachment ${att.filename}: ${uploadError.message}`);
 
-    if (!uploadError) {
-      await supabase.from('attachments').insert({
-        message_id: messageId,
-        storage_path: storagePath,
-        filename: att.filename,
-        mime_type: att.mimeType,
-        size_bytes: att.sizeBytes,
-      });
-    }
+    const { error: attachmentError } = await supabase.from('attachments').insert({
+      message_id: messageId,
+      storage_path: storagePath,
+      filename: att.filename,
+      mime_type: att.mimeType,
+      size_bytes: att.sizeBytes,
+    });
+    if (attachmentError) throw new Error(`Could not record attachment ${att.filename}: ${attachmentError.message}`);
   }
 }
 

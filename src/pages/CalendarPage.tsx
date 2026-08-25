@@ -380,6 +380,16 @@ export default function CalendarPage() {
     load();
   };
 
+  const openAttachment = async (att: CalendarEventAttachment) => {
+    try {
+      const { data, error } = await supabase.storage.from('attachments').createSignedUrl(att.storage_path, 60);
+      if (error || !data?.signedUrl) throw error ?? new Error('Could not create attachment link');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      toast.error('Could not open attachment');
+    }
+  };
+
   const nav = (dir: 1 | -1) => {
     if (calView === 'month') setCurrent(dir === 1 ? addMonths(current, 1) : subMonths(current, 1));
     else if (calView === 'day') setCurrent(addDays(current, dir));
@@ -744,11 +754,9 @@ export default function CalendarPage() {
                   <div className="space-y-1">
                     {viewingEvent.calendar_event_attachments.map(att => (
                       <div key={att.id} className="flex items-center justify-between gap-2">
-                        <a
-                          href={supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl}
-                          target="_blank" rel="noreferrer"
+                        <button type="button" onClick={() => { void openAttachment(att); }}
                           className="text-xs text-primary hover:underline truncate flex-1 min-w-0"
-                        >{att.filename}</a>
+                        >{att.filename}</button>
                         <button
                           onClick={() => handleDeleteAttachment(att)}
                           className="text-destructive hover:text-destructive/80 shrink-0"

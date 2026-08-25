@@ -24,6 +24,7 @@ import AdminResourcesPage from '@/pages/AdminResourcesPage';
 import AdminSyncStatusPage from '@/pages/AdminSyncStatusPage';
 import ResourceSchedulePage from '@/pages/ResourceSchedulePage';
 import FollowUpsPage from '@/pages/FollowUpsPage';
+import NotFound from '@/pages/NotFound';
 
 function PublicModule({ name, children }: { name: string; children: ReactNode }) {
   return <ErrorBoundary moduleName={name}>{children}</ErrorBoundary>;
@@ -76,7 +77,7 @@ function AppRoutes() {
       <Route path="/admin/webhooks" element={<AdminModule name="Webhooks"><WebhooksPage /></AdminModule>} />
       <Route path="/admin/resources" element={<AdminModule name="Resources"><AdminResourcesPage /></AdminModule>} />
       <Route path="/admin/sync-status" element={<AdminModule name="Sync status"><AdminSyncStatusPage /></AdminModule>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

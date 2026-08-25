@@ -28,6 +28,8 @@ const SCHEDULED_CHECK_INTERVAL = 60_000;   // 1 minute
 const PENDING_POLL_INTERVAL    = 120_000;  // 2 minutes — re-check for newly credentialed mailboxes
 const OUTBOUND_POLL_INTERVAL   = 10_000;   // 10 seconds — quick outbound send queue
 
+const OUTBOUND_MAX_ATTEMPTS = Math.max(1, parseInt(process.env.OUTBOUND_MAX_ATTEMPTS ?? '5', 10));
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[INIT] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
@@ -185,6 +187,14 @@ async function processMessage(
     .lt('last_message_at', msg.sentAt.toISOString());
 }
 
+async function markMailboxHeartbeat(mailboxId: string): Promise<void> {
+  const { error } = await supabase
+    .from('mailboxes')
+    .update({ last_synced_at: new Date().toISOString(), sync_status: 'active', last_error: null })
+    .eq('id', mailboxId);
+  if (error) throw new Error(`Could not update mailbox heartbeat: ${error.message}`);
+}
+
 async function syncMailbox(mailboxRow: {
   id: string;
   email_address: string;
@@ -289,7 +299,7 @@ async function syncMailbox(mailboxRow: {
         console.log(`[SYNC] Dedicated watcher started for ${email_address}/${folderName} (poll=${pollMs}ms)`);
         await fc.watchFolders([folderName], async (msg) => {
           await processMessage(supabase, mailboxId, folderIdMap, msg);
-        }, pollMs);
+        }, pollMs, () => markMailboxHeartbeat(mailboxId));
       } catch (err) {
         console.error(`[SYNC] Watcher error for ${email_address}/${folderName}:`, err);
         throw err; // propagate so the outer Promise.race can detect failure
@@ -310,7 +320,7 @@ async function syncMailbox(mailboxRow: {
         console.log(`[SYNC] All-other-folders poller started for ${email_address}: ${otherFolders.join(', ')}`);
         await ofc.watchFolders(otherFolders, async (msg) => {
           await processMessage(supabase, mailboxId, folderIdMap, msg);
-        }, OTHER_FOLDERS_POLL_MS);
+        }, OTHER_FOLDERS_POLL_MS, () => markMailboxHeartbeat(mailboxId));
       })().catch(err => {
         console.error(`[SYNC] All-other-folders poller error for ${email_address}:`, err);
         throw err;
@@ -639,9 +649,14 @@ async function processOutboundMessages(): Promise<void> {
         .eq('id', id);
     } catch (err) {
       console.error(`[OUTBOUND] Failed to send ${id}:`, err);
+      const attemptCount = Number(outbound.attempt_count ?? 1);
+      const terminal = attemptCount >= OUTBOUND_MAX_ATTEMPTS;
+      const retryDelayMs = Math.min(30_000 * 2 ** Math.max(0, attemptCount - 1), 30 * 60_000);
       await supabase.from('outbound_messages')
-        .update({ status: 'failed', error: String(err), locked_at: null, updated_at: new Date().toISOString() })
+        .update({ status: terminal ? 'failed' : 'pending', error: String(err), locked_at: null,
+          next_attempt_at: terminal ? null : new Date(Date.now() + retryDelayMs).toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id);
+      if (!terminal) console.log(`[OUTBOUND] Retrying ${id} in ${retryDelayMs / 1000}s (attempt ${attemptCount}/${OUTBOUND_MAX_ATTEMPTS})`);
     }
   }
 }

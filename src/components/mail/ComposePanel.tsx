@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   X, ChevronDown, Paperclip, Clock, Send, Minus, LayoutTemplate,
-  Maximize2, Minimize2, Users, Trash2, Sparkles, Wand2
+  Maximize2, Minimize2, Users, Trash2, Sparkles, Wand2, Save
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -380,6 +380,17 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     void saveDraft();
     onClose();
+  };
+
+  const handleSaveDraft = async () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    await saveDraft();
+    if (draftRef.current) {
+      persistBrowserDraft();
+      toast.success('Draft saved');
+    } else {
+      toast.info('Add a recipient, subject, or message before saving a draft');
+    }
   };
 
   const handleDiscard = async () => {
@@ -910,6 +921,9 @@ export default function ComposePanel({ mode = 'compose', replyTo, initialDraft, 
               Sending {format(scheduleAt, 'dd MMM, HH:mm')}
             </span>
           )}
+          <Button variant="outline" size="sm" className="h-9 rounded-md px-3 text-xs" title="Save as draft" onClick={() => { void handleSaveDraft(); }} disabled={sending}>
+            <Save className="mr-1.5 h-3.5 w-3.5" /> Save draft
+          </Button>
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40" title="Discard draft" onClick={handleDiscard}>
             <Trash2 className="w-4 h-4" />
           </Button>

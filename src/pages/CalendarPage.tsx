@@ -139,6 +139,7 @@ export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
+  const [availabilityMailboxes, setAvailabilityMailboxes] = useState<Array<{ email_address: string; staff_user_id: string | null }>>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [resourceBookings, setResourceBookings] = useState<ResourceBooking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,15 +168,22 @@ export default function CalendarPage() {
     if (!organization) return;
     setLoading(true);
     try {
-      const [evs, allEvs, res] = await Promise.all([
+      const [evs, allEvs, res, mailboxResult] = await Promise.all([
         fetchCalendarEvents(organization.id, rangeStart, rangeEnd),
         fetchAllCalendarEvents(organization.id),
         fetchResources(organization.id),
+        supabase.from('mailboxes').select('email_address, staff_user_id').eq('organization_id', organization.id).order('email_address'),
       ]);
       const expanded = evs.flatMap(e => expandRecurrences(e, rangeStart, rangeEnd));
       setEvents(expanded);
       setAllEvents(allEvs);
       setResources(res);
+      if (mailboxResult.error) throw mailboxResult.error;
+      setAvailabilityMailboxes(
+        (mailboxResult.data ?? []).filter((mailbox): mailbox is { email_address: string; staff_user_id: string | null } =>
+          Boolean(mailbox?.email_address),
+        ),
+      );
 
       // Resource bookings for the current week/month
       const bookings = await fetchResourceBookings(organization.id, rangeStart, rangeEnd);
@@ -397,14 +405,14 @@ export default function CalendarPage() {
   };
 
   // ── Free/Busy helpers ────────────────────────────────────────────────────
-  const staffEmails = Array.from(new Set(allEvents.flatMap(e => [
-    ...(e.attendees ?? []),
-  ]))).filter(Boolean).sort();
+  const staffEmails = availabilityMailboxes.map(mailbox => mailbox.email_address);
 
   const getBusyBlocks = (email: string, day: Date) =>
     allEvents.filter(e =>
       isSameDay(parseISO(e.start_at), day) &&
-      (e.attendees?.includes(email) || e.created_by === staffUser?.id)
+      (e.attendees?.includes(email) || availabilityMailboxes.some(mailbox =>
+        mailbox.email_address === email && mailbox.staff_user_id === e.created_by,
+      ))
     );
 
   // ── Resource availability ────────────────────────────────────────────────

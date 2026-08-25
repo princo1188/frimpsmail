@@ -32,7 +32,8 @@ const EMPTY_GROUP: GroupForm = { name: '', description: '' };
 
 type ContactGroupWithCount = ContactGroup & { contact_group_members?: { count?: number }[] | number | null };
 
-function getGroupMemberCount(group: ContactGroupWithCount) {
+function getGroupMemberCount(group: ContactGroupWithCount | null | undefined) {
+  if (!group) return 0;
   const countRelation = group.contact_group_members;
   if (typeof countRelation === 'number') return countRelation;
   return countRelation?.[0]?.count ?? group.member_count ?? 0;
@@ -43,6 +44,7 @@ function ContactsTab() {
   const { organization, staffUser } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
@@ -55,12 +57,13 @@ function ContactsTab() {
   const load = useCallback(async () => {
     if (!organization) { setLoading(false); return; }
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await fetchContacts(organization.id);
       setContacts(data);
     } catch (error) {
       console.error('Failed to load contacts', error);
-      toast.error('Failed to load contacts');
+      setLoadError('Contacts could not be loaded. Check your connection and try again.');
       setContacts([]);
     } finally {
       setLoading(false);
@@ -69,9 +72,10 @@ function ContactsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const companies = Array.from(new Set(contacts.map(c => c.company?.trim()).filter(Boolean) as string[])).sort();
+  const safeContacts = contacts.filter((contact): contact is Contact => Boolean(contact?.id && contact?.email));
+  const companies = Array.from(new Set(safeContacts.map(c => c.company?.trim()).filter(Boolean) as string[])).sort();
 
-  const filtered = contacts.filter(c => {
+  const filtered = safeContacts.filter(c => {
     const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -136,6 +140,12 @@ function ContactsTab() {
           <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-2" /> Add Contact</Button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{loadError}</span><Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="pb-2">
@@ -403,6 +413,7 @@ function GroupsTab() {
 
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ContactGroup | null>(null);
@@ -416,12 +427,13 @@ function GroupsTab() {
   const load = useCallback(async () => {
     if (!organization) { setLoading(false); return; }
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await fetchContactGroups(organization.id, activeMailbox?.id);
       setGroups(data);
     } catch (error) {
       console.error('Failed to load contact groups', error);
-      toast.error('Failed to load contact groups');
+      setLoadError('Groups could not be loaded. Please try again.');
       setGroups([]);
     } finally {
       setLoading(false);
@@ -430,7 +442,7 @@ function GroupsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = (groups ?? []).filter((g): g is ContactGroup => Boolean(g)).filter(g =>
+  const filtered = (groups ?? []).filter((g): g is ContactGroup => Boolean(g?.id && g?.name)).filter(g =>
     (g.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
     (g.description ?? '').toLowerCase().includes(search.toLowerCase())
   );
@@ -512,6 +524,12 @@ function GroupsTab() {
         <p className="text-xs text-muted-foreground mb-3">
           Groups are saved to <span className="font-medium text-foreground">{activeMailbox.email_address}</span>. Org-wide groups are also shown.
         </p>
+      )}
+
+      {loadError && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{loadError}</span><Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
+        </div>
       )}
 
       <Card>

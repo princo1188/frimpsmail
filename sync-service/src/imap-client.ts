@@ -135,9 +135,42 @@ export class ImapClient {
     require('fs').writeFileSync('/tmp/sync-alive', new Date().toISOString());
   }
 
-  async disconnect(): Promise<void> {
-    try { await this.client.logout(); } catch { /* ignore */ }
-    ImapClient.activeClients.delete(this);
+  /**
+   * Log out gracefully when possible, but never let a server that is already
+   * gone keep a finite worker alive. `close()` synchronously destroys the
+   * underlying socket and cancels ImapFlow's internal timers/requests.
+   */
+  async disconnect(timeoutMs = 3_000): Promise<void> {
+    let timeout: NodeJS.Timeout | undefined;
+    let timedOut = false;
+
+    try {
+      const logout = this.client.logout();
+      // A timed-out logout can reject after the race has settled. Attach a
+      // handler immediately so it can never become an unhandled rejection.
+      void logout.catch(() => undefined);
+
+      await Promise.race([
+        logout,
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, timeoutMs);
+          timeout.unref();
+        }),
+      ]);
+
+      if (timedOut) {
+        console.warn(`[IMAP] Logout exceeded ${timeoutMs}ms; force-closing ${this.config.emailAddress}`);
+      }
+    } catch {
+      // close() below still destroys a failed or half-open socket.
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      this.client.close();
+      ImapClient.activeClients.delete(this);
+    }
   }
 
   static async disconnectAll(): Promise<void> {

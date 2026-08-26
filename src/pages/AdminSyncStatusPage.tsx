@@ -127,21 +127,12 @@ export default function AdminSyncStatusPage() {
     }
   }, []);
 
-  // Initial load + live realtime updates
+  // Operational status is refreshed at a low fixed cadence rather than via a
+  // Realtime stream for each worker heartbeat.
   useEffect(() => {
-    load();
-    const channel = supabase
-      .channel('sync-status-watch')
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'mailboxes',
-      }, payload => {
-        setMailboxes(prev => prev.map(mb =>
-          mb.id === payload.new.id ? { ...mb, ...(payload.new as SyncMailbox) } : mb
-        ));
-        setLastRefresh(new Date());
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 60_000);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   const filtered = mailboxes.filter(mb =>

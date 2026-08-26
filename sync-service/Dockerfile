@@ -1,11 +1,12 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Install dumb-init for proper signal handling
@@ -14,10 +15,10 @@ RUN apk add --no-cache dumb-init
 # Run as non-root
 RUN addgroup -g 1001 -S sync && adduser -u 1001 -S sync -G sync
 
-COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile && pnpm store prune
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/ecosystem.config.cjs ./
 
 USER sync
 

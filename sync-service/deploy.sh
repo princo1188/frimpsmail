@@ -2,17 +2,20 @@
 set -euo pipefail
 
 # Production deployment script for Frimps Mail sync service
-# Run this on your target server after copying /sync-service contents.
+# Run this on a systemd-managed Linux server after copying the deployment archive
+# contents and creating $APP_DIR/.env from .env.example. DirectAdmin deployments
+# should instead follow DEPLOYMENT.md and use Passenger's app.js entry point.
 
 APP_DIR="/opt/frimps-mail-sync"
 LOG_DIR="/var/log/frimps-mail-sync"
 SERVICE_USER="frimps"
 
 # --- System dependencies ---
-echo "[deploy] Installing Node.js dependencies..."
+echo "[deploy] Installing build dependencies..."
 cd "$(dirname "$0")"
-npm ci
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run build
 
 # --- User + dirs ---
 echo "[deploy] Creating service user and log directory..."
@@ -23,7 +26,13 @@ sudo mkdir -p "$APP_DIR" "$LOG_DIR"
 
 # --- Copy artifacts ---
 echo "[deploy] Copying artifacts to $APP_DIR..."
-sudo cp -r dist package*.json .env ecosystem.config.cjs frimps-mail-sync.service "$APP_DIR/"
+if [ ! -f "$APP_DIR/.env" ]; then
+  echo "[deploy] Missing $APP_DIR/.env. Copy .env.example there and set real secrets first."
+  exit 1
+fi
+sudo cp -r dist package.json pnpm-lock.yaml ecosystem.config.cjs frimps-mail-sync.service "$APP_DIR/"
+echo "[deploy] Installing production-only runtime dependencies..."
+sudo corepack pnpm --dir "$APP_DIR" install --prod --frozen-lockfile
 sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR" "$LOG_DIR"
 
 # --- systemd install ---

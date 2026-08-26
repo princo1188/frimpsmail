@@ -66,11 +66,12 @@ export async function checkDueReminders(supabase: SupabaseClient): Promise<void>
 }
 
 /** Start the reminder scheduler loop — runs every 2 minutes */
-export function scheduleReminders(supabase: SupabaseClient): void {
+export function scheduleReminders(supabase: SupabaseClient): () => void {
   console.log('[REMINDER] Scheduler started — checking every 2 minutes');
   // Run immediately on start, then on interval
   checkDueReminders(supabase).catch(err => console.error('[REMINDER] Initial check error:', err));
-  setInterval(() => {
+  const timer = setInterval(() => {
     checkDueReminders(supabase).catch(err => console.error('[REMINDER] Check error:', err));
   }, REMINDER_CHECK_INTERVAL);
+  return () => clearInterval(timer);
 }

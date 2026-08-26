@@ -19,8 +19,5 @@ EnvironmentFile=/opt/frimps-mail-sync/.env
 TimeoutStopSec=20
 KillSignal=SIGTERM
 
-# Health: ensure heartbeat is fresh
-WatchdogSec=30
-
 [Install]
 WantedBy=multi-user.target

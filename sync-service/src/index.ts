@@ -29,6 +29,7 @@ const PENDING_POLL_INTERVAL    = 120_000;  // 2 minutes — re-check for newly c
 const OUTBOUND_POLL_INTERVAL   = 10_000;   // 10 seconds — quick outbound send queue
 
 const OUTBOUND_MAX_ATTEMPTS = Math.max(1, parseInt(process.env.OUTBOUND_MAX_ATTEMPTS ?? '5', 10));
+const MAILBOX_HEARTBEAT_INTERVAL = 5 * 60_000;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[INIT] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
@@ -36,6 +37,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const mailboxHeartbeatWriteAt = new Map<string, number>();
 
 /**
  * A second line of defence for deployments where the worker is accidentally
@@ -138,11 +140,7 @@ async function processMessage(
   const messageId = await insertMessage(supabase, mailboxId, threadId, msg, folderId);
   if (!messageId) return; // Duplicate, skip
 
-  const { error: syncUpdateError } = await supabase
-    .from('mailboxes')
-    .update({ last_synced_at: new Date().toISOString(), sync_status: 'active', last_error: null })
-    .eq('id', mailboxId);
-  if (syncUpdateError) console.error(`[SYNC] Could not update sync heartbeat for ${mailboxId}:`, syncUpdateError);
+  await markMailboxHeartbeat(mailboxId, true);
 
   // Store attachments
   if (msg.attachments.length) {
@@ -187,12 +185,22 @@ async function processMessage(
     .lt('last_message_at', msg.sentAt.toISOString());
 }
 
-async function markMailboxHeartbeat(mailboxId: string): Promise<void> {
+/** Persist imported-mail activity immediately and idle liveness at most every five minutes. */
+async function markMailboxHeartbeat(mailboxId: string, importedMessage = false): Promise<void> {
+  const now = Date.now();
+  const lastWriteAt = mailboxHeartbeatWriteAt.get(mailboxId) ?? 0;
+  if (!importedMessage && now - lastWriteAt < MAILBOX_HEARTBEAT_INTERVAL) return;
+
+  // Set before awaiting so concurrent folder pollers cannot fan out writes.
+  mailboxHeartbeatWriteAt.set(mailboxId, now);
   const { error } = await supabase
     .from('mailboxes')
     .update({ last_synced_at: new Date().toISOString(), sync_status: 'active', last_error: null })
     .eq('id', mailboxId);
-  if (error) throw new Error(`Could not update mailbox heartbeat: ${error.message}`);
+  if (error) {
+    mailboxHeartbeatWriteAt.delete(mailboxId);
+    throw new Error(`Could not update mailbox heartbeat: ${error.message}`);
+  }
 }
 
 async function syncMailbox(mailboxRow: {
@@ -262,6 +270,7 @@ async function syncMailbox(mailboxRow: {
       last_synced_at: new Date().toISOString(),
       last_error: null,
     }).eq('id', mailboxId);
+    mailboxHeartbeatWriteAt.set(mailboxId, Date.now());
 
     console.log(`[SYNC] Backfill complete for ${email_address}, entering multi-connection watch`);
 
@@ -739,14 +748,21 @@ async function main(): Promise<void> {
   process.on('uncaughtException', err => console.error('[FATAL] Uncaught exception:', err));
   process.on('unhandledRejection', err => console.error('[FATAL] Unhandled rejection:', err));
 
+  const intervals: NodeJS.Timeout[] = [];
+  const every = (callback: () => void, intervalMs: number) => {
+    const timer = setInterval(callback, intervalMs);
+    intervals.push(timer);
+    return timer;
+  };
+
   // Initial heartbeat
   writeHeartbeat();
-  setInterval(writeHeartbeat, 10_000);
+  every(writeHeartbeat, 10_000);
 
   // Load all credentialed mailboxes on startup (including 'syncing' which may be stale from a dead process)
   const { data: mailboxes, error } = await supabase
     .from('mailboxes')
-    .select('id, email_address, imap_host, imap_port, credential_vault_ref')
+    .select('id, email_address, imap_host, imap_port, credential_vault_ref, last_synced_at')
     .not('credential_vault_ref', 'is', null)
     .in('sync_status', ['pending', 'active', 'error', 'syncing']);
 
@@ -755,24 +771,30 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Preserve the persisted five-minute heartbeat window across worker restarts.
+  for (const mailbox of mailboxes ?? []) {
+    const lastSyncedAt = Date.parse(mailbox.last_synced_at ?? '');
+    if (!Number.isNaN(lastSyncedAt)) mailboxHeartbeatWriteAt.set(mailbox.id, lastSyncedAt);
+  }
+
   // Outbound send queue processor — run immediately then every 10 s
   processOutboundMessages().catch(err => console.error('[OUTBOUND] Error:', err));
-  setInterval(() => {
+  every(() => {
     processOutboundMessages().catch(err => console.error('[OUTBOUND] Error:', err));
   }, OUTBOUND_POLL_INTERVAL);
 
   // Scheduled messages checker — run immediately then every 60 s
   processScheduledMessages().catch(err => console.error('[SCHEDULED] Error:', err));
-  setInterval(() => {
+  every(() => {
     processScheduledMessages().catch(err => console.error('[SCHEDULED] Error:', err));
   }, SCHEDULED_CHECK_INTERVAL);
 
   // Calendar reminder scheduler (checks every 2 min)
-  scheduleReminders(supabase);
+  const stopReminders = scheduleReminders(supabase);
 
   // Periodic re-poll: picks up mailboxes whose credentials were added while the service was running
   // or that failed and need retrying — even if the realtime event was missed
-  setInterval(() => {
+  every(() => {
     pollPendingMailboxes().catch(err => console.error('[POLL] Error:', err));
   }, PENDING_POLL_INTERVAL);
 
@@ -785,39 +807,8 @@ async function main(): Promise<void> {
     }
   }
 
-  // Realtime: watch for new mailbox INSERTs and credential UPDATEs
-  const channel = supabase
-    .channel('mailbox-changes')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mailboxes' },
-      async (payload) => {
-        const mb = payload.new as {
-          id: string; email_address: string; imap_host: string;
-          imap_port: number; credential_vault_ref: string; sync_status: string;
-        };
-        if (mb.credential_vault_ref) {
-          console.log(`[REALTIME] New mailbox with credentials: ${mb.email_address}`);
-          await startMailboxSync(mb);
-        }
-      }
-    )
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mailboxes' },
-      async (payload) => {
-        const mb = payload.new as {
-          id: string; email_address: string; imap_host: string;
-          imap_port: number; credential_vault_ref: string; sync_status: string;
-        };
-        const old = payload.old as { credential_vault_ref?: string };
-        // Credentials were just added to a previously uncredentialed mailbox
-        if (mb.credential_vault_ref && !old.credential_vault_ref && mb.sync_status === 'pending') {
-          console.log(`[REALTIME] Credentials set for ${mb.email_address}, starting sync`);
-          await startMailboxSync(mb);
-        }
-      }
-    )
-    .subscribe();
-
   // Realtime: auto-send ICS invites for newly created calendar events with external attendees
-  supabase
+  const calendarInviteChannel = supabase
     .channel('calendar-event-invites')
     .on(
       'postgres_changes',
@@ -883,12 +874,21 @@ async function main(): Promise<void> {
 
   console.log('[INIT] Sync service running. Polling for pending mailboxes every 2 min.');
 
-  process.on('SIGTERM', async () => {
-    console.log('[SHUTDOWN] SIGTERM received, shutting down gracefully...');
-    await channel.unsubscribe();
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[SHUTDOWN] ${signal} received, shutting down gracefully...`);
+    for (const timer of intervals) clearInterval(timer);
+    stopReminders();
+    await calendarInviteChannel.unsubscribe();
+    await ImapClient.disconnectAll();
     if (healthServer) await new Promise<void>(resolve => healthServer!.close(() => resolve()));
-    process.exit(0);
-  });
+    releaseProcessLock();
+    process.exitCode = 0;
+  };
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
 }
 
 main().catch(err => {

@@ -24,7 +24,7 @@ USER sync
 
 # Health check — the process writes a heartbeat every 10s
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
-  CMD node -e "const fs=require('fs');const t=Date.now()-new Date(fs.readFileSync('/tmp/sync-alive','utf8')).getTime();if(t>60000)process.exit(1);" || exit 1
+  CMD node -e "const fs=require('fs');const t=Date.parse(fs.readFileSync('/tmp/sync-alive','utf8').trim());if(!Number.isFinite(t)||Date.now()-t>60000)process.exit(1);" || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/index.js"]

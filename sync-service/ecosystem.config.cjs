@@ -19,8 +19,7 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       // Graceful shutdown
       kill_timeout: 15000,
-      wait_ready: true,
-      listen_timeout: 10000,
+      wait_ready: false,
       // Health check via heartbeat file
       exp_backoff_restart_delay: 100,
       // Ensure env is loaded

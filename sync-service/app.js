@@ -1,2 +1,2 @@
-// DirectAdmin application entry point.
-require('./dist/index.js');
+// DirectAdmin/Passenger entry point. The sync worker runs separately via Cron.
+require('./dist/passenger-health.js');

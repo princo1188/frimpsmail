@@ -37,7 +37,22 @@ Postgres connection, so a database pooler URL is not required or consumed.
 
 Set the DirectAdmin Node.js application's startup file to `app.js`, choose Node
 22+, set the application root to this directory, and restart the application after
-creating `.env`. Passenger supplies `PORT`; the worker honors it automatically.
+creating `.env`. Passenger now serves only the health/control endpoint; it does not
+start the persistent IMAP worker.
+
+## DirectAdmin Cron worker
+
+Install production dependencies once, then schedule the finite worker every one to
+five minutes. It leases a small mailbox batch, closes every socket, and exits.
+
+```bash
+corepack enable
+pnpm install --prod --frozen-lockfile
+SYNC_BATCH_LIMIT=5 /usr/bin/node dist/cli-sync.js >> logs/sync-cron.log 2>&1
+```
+
+Set `SYNC_BATCH_LIMIT` conservatively (five is the default) for shared hosting.
+Apply migration `00028_worker_mailbox_claims.sql` before enabling the Cron job.
 
 To run outside Passenger after installation:
 

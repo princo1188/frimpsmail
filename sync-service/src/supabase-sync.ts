@@ -53,10 +53,17 @@ export async function syncFolders(
         .insert({ mailbox_id: mailboxId, imap_folder_name: name, normalized_type: normalized, display_name: displayName })
         .select('id')
         .single();
-      if (insertError || !inserted) {
+      if (insertError?.code === '23505') {
+        const { data: concurrent, error: concurrentError } = await supabase
+          .from('mailbox_folders').select('id')
+          .eq('mailbox_id', mailboxId).eq('imap_folder_name', name).single();
+        if (concurrentError || !concurrent) throw new Error(`Could not recover concurrent folder creation for "${name}"`);
+        folderIdMap.set(name, concurrent.id);
+      } else if (insertError || !inserted) {
         throw new Error(`Could not create folder "${name}": ${insertError?.message ?? 'no id returned'}`);
+      } else {
+        folderIdMap.set(name, inserted.id);
       }
-      folderIdMap.set(name, inserted.id);
     }
   }
 
@@ -136,7 +143,7 @@ export async function insertMessage(
     .eq('imap_uidvalidity', msg.imapUidvalidity)
     .maybeSingle();
 
-  if (existing) return existing.id; // Already stored
+  if (existing) return null; // Already stored
 
   const spamStatus = msg.isSpamFolder ? 'confirmed_spam' : 'clean';
 

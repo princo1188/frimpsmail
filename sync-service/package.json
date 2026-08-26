@@ -13,6 +13,8 @@
     "check": "tsc --noEmit",
     "build": "pnpm run check && tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:daemon": "node dist/index.js",
+    "sync:batch": "node dist/cli-sync.js",
     "start:passenger": "node app.js"
   },
   "dependencies": {

@@ -60,6 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchStaffUser = useCallback(async (userId: string) => {
+    // Clear the previous identity before loading the new session's profile.
+    // Without this, a failed lookup during an account switch can leave the
+    // previous user's (possibly admin) role visible to route guards.
+    setStaffUser(null);
+    setOrganization(null);
     const { data, error } = await supabase
       .from('staff_users')
       .select('*')

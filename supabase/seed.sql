@@ -6,6 +6,7 @@ DO $$
 DECLARE
   v_email text;
   v_user_id uuid;
+  v_seed_password text := encode(extensions.gen_random_bytes(32), 'hex');
 BEGIN
   FOREACH v_email IN ARRAY ARRAY[
     'administration@frimpsoil.com.gh', 'audit@frimpsoil.com.gh',
@@ -41,7 +42,7 @@ BEGIN
       ) VALUES (
         gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', v_email,
-        extensions.crypt('OilFrimps@2026$$$', extensions.gen_salt('bf')),
+        extensions.crypt(v_seed_password, extensions.gen_salt('bf')),
         now(), now(), now(),
         '{"provider":"email","providers":["email"]}'::jsonb,
         jsonb_build_object('full_name', initcap(replace(replace(split_part(v_email, '@', 1), '.', ' '), '-', ' '))),
@@ -49,7 +50,7 @@ BEGIN
       ) RETURNING id INTO v_user_id;
     ELSE
       UPDATE auth.users
-      SET encrypted_password = extensions.crypt('OilFrimps@2026$$$', extensions.gen_salt('bf')),
+      SET encrypted_password = extensions.crypt(v_seed_password, extensions.gen_salt('bf')),
           email_confirmed_at = now(),
           updated_at = now()
       WHERE id = v_user_id;
@@ -94,6 +95,7 @@ DECLARE
   v_user_id uuid;
   v_mailbox_id uuid;
   v_vault_ref uuid;
+  v_mailbox_password text := encode(extensions.gen_random_bytes(32), 'hex');
 BEGIN
   FOREACH v_email IN ARRAY ARRAY[
     'administration@frimpsoil.com.gh', 'audit@frimpsoil.com.gh',
@@ -122,7 +124,7 @@ BEGIN
     END IF;
 
     v_vault_ref := public.vault_upsert_secret(
-      'Frimps@2026',
+      v_mailbox_password,
       format('mailbox_%s_password', lower(regexp_replace(v_email, '[^a-zA-Z0-9]', '_', 'g'))),
       format('IMAP/SMTP password for %s', v_email)
     );

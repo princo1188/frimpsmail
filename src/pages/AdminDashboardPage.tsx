@@ -55,36 +55,40 @@ export default function AdminDashboardPage() {
     if (!organization) return;
     setLoading(true);
     try {
-      // Fetch all mailboxes
-      const { data: mailboxes } = await supabase
-        .from('mailboxes')
-        .select('*, staff_users(full_name)')
-        .eq('organization_id', organization.id)
-        .order('created_at');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const [{ data: mailboxes, error: mailboxError }, { data: countRows, error: countError }] = await Promise.all([
+        supabase
+          .from('mailboxes')
+          .select('*, staff_users(full_name)')
+          .eq('organization_id', organization.id)
+          .order('created_at'),
+        supabase.rpc('get_admin_mailbox_message_counts', {
+          p_organization_id: organization.id,
+          p_since: today.toISOString(),
+        }),
+      ]);
+
+      if (mailboxError) throw mailboxError;
+      if (countError) throw countError;
 
       if (!mailboxes) { setLoading(false); return; }
 
-      // Per-mailbox stats
-      const statsArr: MailboxStats[] = await Promise.all(
-        mailboxes.map(async mb => {
-          const today = new Date(); today.setHours(0,0,0,0);
-
-          const [{ count: totalMessages }, { count: unreadMessages }, { count: todayMessages }] = await Promise.all([
-            supabase.from('messages').select('*', { count: 'exact', head: true }).eq('mailbox_id', mb.id),
-            supabase.from('messages').select('*', { count: 'exact', head: true }).eq('mailbox_id', mb.id).eq('is_read', false),
-            supabase.from('messages').select('*', { count: 'exact', head: true }).eq('mailbox_id', mb.id).gte('sent_at', today.toISOString()),
-          ]);
-
-          return {
-            mailbox: mb,
-            totalMessages: totalMessages ?? 0,
-            unreadMessages: unreadMessages ?? 0,
-            todayMessages: todayMessages ?? 0,
-            errorCount: mb.last_error ? 1 : 0,
-            lastError: mb.last_error,
-          };
-        })
+      const countsByMailbox = new Map(
+        ((countRows ?? []) as Array<{ mailbox_id: string; total_messages: number; unread_messages: number; today_messages: number }>)
+          .map(row => [row.mailbox_id, row]),
       );
+      const statsArr: MailboxStats[] = mailboxes.map(mb => {
+        const counts = countsByMailbox.get(mb.id);
+        return {
+          mailbox: mb,
+          totalMessages: Number(counts?.total_messages ?? 0),
+          unreadMessages: Number(counts?.unread_messages ?? 0),
+          todayMessages: Number(counts?.today_messages ?? 0),
+          errorCount: mb.last_error ? 1 : 0,
+          lastError: mb.last_error,
+        };
+      });
 
       setStats(statsArr);
 

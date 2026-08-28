@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
 const organizationDomain = 'frimpsoil.com.gh';
-const mailboxPassword = 'Frimps@2026';
+const mailboxPassword = process.env.MAILBOX_PASSWORD;
+if (!mailboxPassword) throw new Error('MAILBOX_PASSWORD is required.');
 const emails = [
   'administration@frimpsoil.com.gh', 'audit@frimpsoil.com.gh',
   'daniel.yekple@frimpsoil.com.gh', 'david.ajera@frimpsoil.com.gh',

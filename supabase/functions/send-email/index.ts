@@ -56,6 +56,16 @@ serve(async (req) => {
       Array.isArray(value) && value.length > 0 && value.every(address => typeof address === 'string' && address.trim().length > 0);
     const validOptionalRecipients = (value: unknown): value is string[] | undefined =>
       value === undefined || (Array.isArray(value) && value.every(address => typeof address === 'string' && address.trim().length > 0));
+    const validAttachments = (value: unknown, mailboxId: string): value is Array<{ path: string; filename: string; mimeType?: string }> =>
+      value === undefined || (
+        Array.isArray(value) && value.every(attachment =>
+          typeof attachment === 'object' && attachment !== null
+          && typeof (attachment as { path?: unknown }).path === 'string'
+          && (attachment as { path: string }).path.startsWith(`attachments/${mailboxId}/compose/`)
+          && typeof (attachment as { filename?: unknown }).filename === 'string'
+          && (attachment as { filename: string }).filename.length > 0
+        )
+      );
 
     if (!mailbox_id || typeof subject !== 'string' || !subject.trim() || !validRecipients(to) || !validOptionalRecipients(cc) || !validOptionalRecipients(bcc)) {
       return jsonResponse({ error: 'mailbox_id, to[], subject required' }, 400);
@@ -71,6 +81,9 @@ serve(async (req) => {
     const isOwner = mailbox.staff_user_id === callerStaff.id;
     const isOrgAdmin = callerStaff.role === 'admin' && mailbox.organization_id === callerStaff.organization_id;
     if (!isOwner && !isOrgAdmin) return jsonResponse({ error: 'Mailbox access denied' }, 403);
+    if (!validAttachments(attachments, mailbox_id)) {
+      return jsonResponse({ error: 'Attachments must belong to the sending mailbox' }, 400);
+    }
 
     // Queue outbound message for the sync service email-safe pipeline
     const { error: insertErr } = await supabase.from('outbound_messages').insert({

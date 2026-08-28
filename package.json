@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "echo 'Do not use this command, only use lint to check'",
     "build": "vite build",
-    "lint": "tsgo -p tsconfig.check.json && biome lint src && tailwindcss -i ./src/index.css -o ./node_modules/.tmp/tailwind-lint.css"
+    "lint": "tsc -p tsconfig.check.json --noEmit && biome lint src && tailwindcss -i ./src/index.css -o ./node_modules/.tmp/tailwind-lint.css"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

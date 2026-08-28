@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const defaultPassword = 'OilFrimps@2026$$$';
-const passwordsByEmail = new Map([
-  ['prince@frimpsoil.com.gh', 'Frimps@2026'],
-]);
+const defaultPassword = process.env.SEED_DEFAULT_PASSWORD;
+if (!defaultPassword) throw new Error('SEED_DEFAULT_PASSWORD is required.');
+const passwordsByEmail = new Map(
+  process.env.SEED_PRINCE_PASSWORD
+    ? [['prince@frimpsoil.com.gh', process.env.SEED_PRINCE_PASSWORD]]
+    : [],
+);
 const emails = [
   'administration@frimpsoil.com.gh',
   'audit@frimpsoil.com.gh',

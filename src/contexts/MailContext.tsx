@@ -59,6 +59,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const threadRequestRef = useRef(0);
   const messageRequestRef = useRef(0);
+  const threadRefreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery), 250);
@@ -168,38 +169,41 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
 
-  // Realtime subscription
+  // Keep a single user-facing message stream and coalesce sync batches.
   useEffect(() => {
     if (!activeMailbox) return;
+    const scheduleThreadRefresh = () => {
+      if (threadRefreshTimerRef.current) window.clearTimeout(threadRefreshTimerRef.current);
+      threadRefreshTimerRef.current = window.setTimeout(() => {
+        threadRefreshTimerRef.current = null;
+        void loadThreads();
+      }, 300);
+    };
     const channel = supabase
       .channel(`mail-realtime-${activeMailbox.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'threads', filter: `mailbox_id=eq.${activeMailbox.id}` },
-        () => loadThreads()
-      )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `mailbox_id=eq.${activeMailbox.id}` },
-        () => { loadThreads(); if (activeThread) loadMessages(activeThread.id); }
+        (payload) => {
+          scheduleThreadRefresh();
+          const changedThreadId = (payload.new as { thread_id?: string } | null)?.thread_id
+            ?? (payload.old as { thread_id?: string } | null)?.thread_id;
+          const activeThreadId = activeThread?.id;
+          if (activeThreadId && activeThreadId === changedThreadId) void loadMessages(activeThreadId);
+        }
       )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mailbox_folders', filter: `mailbox_id=eq.${activeMailbox.id}` }, () => {
-        const refreshFolders = async () => {
-          try {
-            const { data, error } = await supabase.from('mailbox_folders').select('*').eq('mailbox_id', activeMailbox.id);
-            if (error) throw error;
-            if (data) setFolders(data as MailboxFolder[]);
-          } catch (error) {
-            reportMailError('Failed to refresh mailbox folders', error);
-          }
-        };
-        void refreshFolders();
-      })
       .subscribe();
-    return () => { channel.unsubscribe(); };
+    return () => {
+      if (threadRefreshTimerRef.current) window.clearTimeout(threadRefreshTimerRef.current);
+      channel.unsubscribe();
+    };
   }, [activeMailbox, activeThread, loadThreads]); // eslint-disable-line
 
-  // Realtime is the fast path; polling is the recovery path for browser sleep,
-  // transient websocket loss, and IMAP sync updates arriving during reconnect.
+  // Recovery path for browser sleep and transient websocket loss.
   useEffect(() => {
     if (!activeMailbox) return;
-    const timer = window.setInterval(() => { void loadThreads(); }, 20_000);
+    const refreshIfVisible = () => {
+      if (!document.hidden) void loadThreads();
+    };
+    const timer = window.setInterval(refreshIfVisible, 90_000);
     return () => window.clearInterval(timer);
   }, [activeMailbox, loadThreads]);
 
@@ -258,9 +262,13 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
   const archiveThread = useCallback(async (threadId: string) => {
     const archiveFolder = folders.find(f => f.normalized_type === 'archive');
+    if (!archiveFolder) {
+      toast.error('Archive folder is unavailable. Please refresh and try again.');
+      return;
+    }
     setThreads(prev => prev.filter(t => t.id !== threadId));
     try {
-      const { error } = await supabase.from('threads').update({ folder_id: archiveFolder?.id ?? null }).eq('id', threadId);
+      const { error } = await supabase.from('threads').update({ folder_id: archiveFolder.id }).eq('id', threadId);
       if (error) throw error;
     } catch (error) {
       reportMailError('Failed to archive thread', error);
@@ -270,9 +278,13 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
   const deleteThread = useCallback(async (threadId: string) => {
     const trashFolder = folders.find(f => f.normalized_type === 'trash');
+    if (!trashFolder) {
+      toast.error('Trash folder is unavailable. Please refresh and try again.');
+      return;
+    }
     setThreads(prev => prev.filter(t => t.id !== threadId));
     try {
-      const { error } = await supabase.from('threads').update({ folder_id: trashFolder?.id ?? null }).eq('id', threadId);
+      const { error } = await supabase.from('threads').update({ folder_id: trashFolder.id }).eq('id', threadId);
       if (error) throw error;
     } catch (error) {
       reportMailError('Failed to move thread to trash', error);
@@ -305,9 +317,13 @@ export function MailProvider({ children }: { children: ReactNode }) {
 
   const moveToSpam = useCallback(async (threadId: string) => {
     const spamFolder = folders.find(f => f.normalized_type === 'spam');
+    if (!spamFolder) {
+      toast.error('Spam folder is unavailable. Please refresh and try again.');
+      return;
+    }
     setThreads(prev => prev.filter(t => t.id !== threadId));
     try {
-      const { error: threadError } = await supabase.from('threads').update({ folder_id: spamFolder?.id ?? null }).eq('id', threadId);
+      const { error: threadError } = await supabase.from('threads').update({ folder_id: spamFolder.id }).eq('id', threadId);
       if (threadError) throw threadError;
       const { error: messageError } = await supabase.from('messages')
         .update({ spam_status: 'confirmed_spam' })

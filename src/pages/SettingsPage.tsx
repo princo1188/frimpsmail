@@ -45,6 +45,12 @@ import LinkExtension from '@tiptap/extension-link';
 import RichTextEditor from '@/components/mail/RichTextEditor';
 import SignatureToolbar from '@/components/mail/SignatureToolbar';
 import { signaturePreviewPipeline } from '@/lib/signaturePreview';
+import DOMPurify from 'dompurify';
+
+const sanitizeTemplateHtml = (html: string) => DOMPurify.sanitize(html, {
+  USE_PROFILES: { html: true },
+  FORBID_TAGS: ['base', 'form', 'iframe', 'object', 'embed', 'svg', 'math'],
+});
 
 // ---- Security Tab ----
 function SecurityTab({ staffUserId }: { staffUserId: string }) {
@@ -659,7 +665,7 @@ function TemplatesTab({ orgId }: { orgId: string }) {
   };
 
   const handleSave = async () => {
-    const body_html = editor?.getHTML() ?? '';
+    const body_html = sanitizeTemplateHtml(editor?.getHTML() ?? '');
     if (!name.trim()) { toast.error('Name required'); return; }
     if (!body_html || body_html === '<p></p>') { toast.error('Template body required'); return; }
     await upsertEmailTemplate({ id: editing?.id, organization_id: orgId, name, subject: subject || null, body_html, category: null, is_shared: false, created_by: null });
@@ -696,7 +702,7 @@ function TemplatesTab({ orgId }: { orgId: string }) {
               {t.subject && <p className="text-xs text-muted-foreground">Subject: {t.subject}</p>}
               <div
                 className="text-xs text-muted-foreground mt-1 line-clamp-2 prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: t.body_html }}
+                dangerouslySetInnerHTML={{ __html: sanitizeTemplateHtml(t.body_html) }}
               />
             </div>
             <div className="flex gap-1 shrink-0">
